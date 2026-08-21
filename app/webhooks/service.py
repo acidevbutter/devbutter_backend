@@ -1,9 +1,13 @@
+from typing import Any
+
 from app.accounts.repository import AccountRepository
 from app.core.decorators import log_errors
 from app.core.exceptions import NotFoundError
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
+from app.webhooks.models import WebhookEvent
+from app.webhooks.repository import WebhookEventRepository
 from app.webhooks.schemas import AsaasWebhookEvent
 
 # Asaas payment status -> local Invoice.status. Unmapped statuses pass through
@@ -32,11 +36,40 @@ class WebhookService:
         order_repository: OrderRepository,
         account_repository: AccountRepository,
         notification_service: NotificationService,
+        event_repository: WebhookEventRepository,
     ):
         self.invoice_repository = invoice_repository
         self.order_repository = order_repository
         self.account_repository = account_repository
         self.notification_service = notification_service
+        self.event_repository = event_repository
+
+    async def process_event(
+        self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
+    ) -> WebhookEvent:
+        invoice = await self.invoice_repository.get_by_asaas_invoice_id(event.payment.id)
+        audit_event = await self.event_repository.create(
+            event_type=event.event,
+            related_invoice_id=invoice.id if invoice else None,
+            payload=raw_payload,
+        )
+        try:
+            await self.handle_payment_event(event)
+        except Exception as exc:
+            detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
+            await self.event_repository.mark_failed(audit_event, detail)
+            raise
+        return await self.event_repository.mark_processed(audit_event)
+
+    async def reprocess_event(self, audit_event: WebhookEvent) -> WebhookEvent:
+        event = AsaasWebhookEvent.model_validate(audit_event.payload)
+        try:
+            await self.handle_payment_event(event)
+        except Exception as exc:
+            detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
+            await self.event_repository.mark_failed(audit_event, detail)
+            raise
+        return await self.event_repository.mark_processed(audit_event)
 
     async def handle_payment_event(self, event: AsaasWebhookEvent) -> None:
         """Idempotent by construction: InvoiceRepository.update_status() is a

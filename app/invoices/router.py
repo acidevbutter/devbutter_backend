@@ -26,6 +26,7 @@ def get_order_repository(db: DbSession) -> OrderRepository:
 OrderRepositoryDep = Annotated[OrderRepository, Depends(get_order_repository)]
 
 router = APIRouter(prefix="/orders/{order_id}/invoices", tags=["invoices"])
+account_router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 
 @router.get("", response_model=list[InvoiceRead], summary="List invoices for an order")
@@ -40,3 +41,13 @@ async def list_order_invoices(
         raise NotFoundError("Order not found")
     invoices = await service.list_for_order(order_id)
     return [InvoiceRead.model_validate(i) for i in invoices]
+
+
+@account_router.get(
+    "", response_model=list[InvoiceRead], summary="List the authenticated account's invoices"
+)
+async def list_account_invoices(
+    account: CurrentAccount, service: InvoiceServiceDep
+) -> list[InvoiceRead]:
+    invoices = await service.list_for_account(account.id)
+    return [InvoiceRead.model_validate(invoice) for invoice in invoices]

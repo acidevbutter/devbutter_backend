@@ -1,4 +1,8 @@
-from pydantic import BaseModel
+import uuid
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 
 class AsaasWebhookPayment(BaseModel):
@@ -14,3 +18,23 @@ class AsaasWebhookEvent(BaseModel):
 
     event: str
     payment: AsaasWebhookPayment
+
+
+class AdminWebhookEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    event_type: str
+    related_invoice_id: uuid.UUID | None
+    processed_ok: bool
+    error_message: str | None
+    payload: dict[str, Any]
+    received_at: datetime
+
+
+class AdminWebhookEventListRead(BaseModel):
+    items: list[AdminWebhookEventRead]
+    total: int
+    page: int
+    page_size: int
+    error_count: int

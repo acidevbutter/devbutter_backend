@@ -15,7 +15,7 @@ clients. See `app/core/clients/`.
 Client app (devbutter_frontend)
         |
         v
-devbutter_platform (this service) -- Postgres (accounts, conversations, quotes, orders, invoices, catalog)
+devbutter_platform (this service) -- Postgres (accounts, conversations, quotes, orders, invoices, catalog, knowledge, webhook_events)
         |            |             |
         | mTLS        | HTTP        | boto3 SQS
         v            v             v
@@ -25,8 +25,8 @@ devbutter_platform (this service) -- Postgres (accounts, conversations, quotes, 
 ## Modules
 
 Each domain follows the same five-file shape (`router.py`, `schemas.py`, `models.py`, `service.py`,
-`repository.py`); `webhooks/`, `admin/`, and `notifications/` deviate deliberately because they hold
-no entity of their own (see `docs/architecture/diagrams/backend-structure.mmd`):
+`repository.py`); `admin/` and `notifications/` deviate deliberately because they are an aggregate
+view and an integration adapter (see `docs/architecture/diagrams/backend-structure.mmd`):
 
 | Module | Responsibility |
 |---|---|
@@ -35,9 +35,10 @@ no entity of their own (see `docs/architecture/diagrams/backend-structure.mmd`):
 | `quotes` | draft (`source`: `ai` \| `manual`), status (`draft`/`approved`/`edited`/`rejected`) |
 | `orders` | created on quote approval; drives Asaas Customer + Invoice creation |
 | `invoices` | local mirror of an Asaas cobrança, kept in sync via webhook |
-| `webhooks` | public receiver for Asaas payment-status events (`asaas-access-token`, idempotent) |
+| `webhooks` | public receiver plus durable audit log for Asaas payment-status events (`asaas-access-token`, idempotent) |
 | `service_catalog` | metadata a client registers about their own business/store |
-| `admin` | Marcos's review queue — a status view over `quotes`, not its own entity |
+| `knowledge` | admin-managed pricing/context entries used by the platform |
+| `admin` | Marcos's review queue and cross-account operational views — not its own entity |
 | `notifications` | builds the payload and publishes it onto `butter_relay`'s SQS queue |
 | `core/clients` | the three integration clients — the only place this service talks to a sibling |
 
@@ -98,10 +99,11 @@ poetry run ruff check .
 ```
 
 Covers: signup/login/refresh and the email-uniqueness 409, service-catalog CRUD with ownership
-checks, the `log_call`/`log_errors` decorators (sync, async, error path), and the full
+checks, admin cross-account views, knowledge-entry CRUD and ownership/role checks, the
+`log_call`/`log_errors` decorators (sync, async, error path), and the full
 manual-quote → admin-approval → Order/Asaas-Customer/Invoice orchestration with `asaas_payment` and
 `butter_relay` faked at the client boundary — including the 409 on re-approving an already-approved
-quote and the Asaas webhook's idempotent status update.
+quote, the Asaas webhook's idempotent status update, and webhook event listing/reprocessing.
 
 ## Auth
 

@@ -19,3 +19,6 @@ class InvoiceService:
 
     async def list_for_order(self, order_id: uuid.UUID) -> list[Invoice]:
         return await self.repository.list_by_order(order_id)
+
+    async def list_for_account(self, account_id: uuid.UUID) -> list[Invoice]:
+        return await self.repository.list_by_account(account_id)

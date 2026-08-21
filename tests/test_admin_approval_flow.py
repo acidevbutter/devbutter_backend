@@ -192,6 +192,22 @@ async def test_asaas_webhook_updates_invoice_status_idempotently(
     assert second.status_code == 204
     assert len(fake_relay.sent) == 1  # unchanged: same status redelivered is a no-op
 
+    events = await client.get(
+        "/admin/webhooks/events?event_type=PAYMENT_RECEIVED",
+        headers=auth_headers(admin_tokens),
+    )
+    assert events.status_code == 200
+    assert events.json()["total"] == 2
+    assert events.json()["error_count"] == 0
+    event_id = events.json()["items"][0]["id"]
+
+    reprocess = await client.post(
+        f"/admin/webhooks/events/{event_id}/reprocess",
+        headers=auth_headers(admin_tokens),
+    )
+    assert reprocess.status_code == 202
+    assert reprocess.json()["processed_ok"] is True
+
     del app.dependency_overrides[get_asaas_client]
     del app.dependency_overrides[get_relay_client]
 

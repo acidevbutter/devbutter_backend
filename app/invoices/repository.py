@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
 from app.invoices.models import Invoice
+from app.orders.models import Order
 
 
 class InvoiceRepository:
@@ -26,6 +27,15 @@ class InvoiceRepository:
     async def list_by_order(self, order_id: uuid.UUID) -> list[Invoice]:
         result = await self.session.execute(
             select(Invoice).where(Invoice.order_id == order_id).order_by(Invoice.created_at.desc())
+        )
+        return list(result.scalars())
+
+    async def list_by_account(self, account_id: uuid.UUID) -> list[Invoice]:
+        result = await self.session.execute(
+            select(Invoice)
+            .join(Order, Order.id == Invoice.order_id)
+            .where(Order.account_id == account_id)
+            .order_by(Invoice.due_date.asc(), Invoice.created_at.desc())
         )
         return list(result.scalars())
 

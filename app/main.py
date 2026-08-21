@@ -9,13 +9,16 @@ from app.conversations.router import router as conversations_router
 from app.core.clients.asaas_client import close_asaas_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
+from app.invoices.router import account_router as account_invoices_router
 from app.invoices.router import router as invoices_router
+from app.knowledge.router import router as knowledge_router
 from app.orders.router import router as orders_router
 from app.quotes.router import router as quotes_router
 from app.service_catalog.router import router as service_catalog_router
 from app.settings.config import settings
 from app.settings.logging_config import setup_logging
 from app.settings.middleware import register_middleware
+from app.webhooks.router import admin_router as admin_webhooks_router
 from app.webhooks.router import router as webhooks_router
 
 setup_logging(settings.log_level)
@@ -45,9 +48,12 @@ app.include_router(conversations_router)
 app.include_router(quotes_router)
 app.include_router(orders_router)
 app.include_router(invoices_router)
+app.include_router(account_invoices_router)
 app.include_router(webhooks_router)
+app.include_router(admin_webhooks_router)
 app.include_router(service_catalog_router)
 app.include_router(admin_router)
+app.include_router(knowledge_router)
 
 
 @app.get("/health", tags=["meta"])

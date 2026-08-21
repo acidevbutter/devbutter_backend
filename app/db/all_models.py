@@ -8,6 +8,8 @@ without updating this import list is silently invisible to
 from app.accounts import models as accounts_models  # noqa: F401
 from app.conversations import models as conversations_models  # noqa: F401
 from app.invoices import models as invoices_models  # noqa: F401
+from app.knowledge import models as knowledge_models  # noqa: F401
 from app.orders import models as orders_models  # noqa: F401
 from app.quotes import models as quotes_models  # noqa: F401
 from app.service_catalog import models as service_catalog_models  # noqa: F401
+from app.webhooks import models as webhooks_models  # noqa: F401
