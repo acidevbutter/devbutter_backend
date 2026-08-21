@@ -62,15 +62,10 @@ no entity of their own (see `docs/architecture/diagrams/backend-structure.mmd`):
   `asaas-access-token` header. Idempotent by construction — `InvoiceRepository.update_status()` is a
   no-op if the mapped status is already applied.
 
-### Known gap to close before this runs end-to-end
+### Local development
 
-`ASAAS_PAYMENT_BASE_URL` must reach `asaas_payment`'s **nginx** (the mTLS termination point), not its
-`app` container directly. As shipped, `asaas_payment/docker-compose.yml`'s `nginx` service is only on
-the `edge`/`internal` networks — it needs to also join `devbutter_shared` (with an alias, e.g.
-`asaas-nginx`) for this service to reach it over mTLS the way the architecture doc intends. That's a
-one-line addition to a sibling repo's compose file, left for Marcos to make deliberately rather than
-changed silently here. Until then, local end-to-end testing of the order-approval flow needs that
-network wired up (or `ASAAS_PAYMENT_BASE_URL` pointed at a locally-reachable nginx some other way).
+Use `../scripts/dev-up.sh` from the workspace root. It creates the shared PostgreSQL and network,
+starts the sibling services, and applies the local migrations.
 
 ## Local development
 
@@ -82,20 +77,11 @@ cp .env.example .env
 #   ../asaas_payment/scripts/generate_dev_certs.sh devbutter-platform
 #   cp ../asaas_payment/certs/{devbutter-platform.crt,devbutter-platform.key,ca.crt} ./certs/
 #   (then add "devbutter-platform" to asaas_payment's ALLOWED_CLIENT_CNS)
-docker compose up --build
+../scripts/dev-up.sh
+# use ../scripts/dev-up.sh --build when images need rebuilding
 ```
 
-Requires the `devbutter_shared` external Docker network the other services already join:
-
-```bash
-docker network create devbutter_shared  # if it doesn't exist yet
-```
-
-Run migrations:
-
-```bash
-poetry run alembic upgrade head
-```
+The script creates the `devbutter_shared` network and shared PostgreSQL before starting the services.
 
 Generate a new migration after changing a model (review it before applying — autogenerate can miss
 renames):

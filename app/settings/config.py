@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+asyncpg://platform:platform@db:5432/platform"
+    database_url: str = "postgresql+asyncpg://platform:platform@shared-postgres:5432/platform"
 
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
 

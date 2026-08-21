@@ -1,20 +1,4 @@
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: platform
-      POSTGRES_PASSWORD: platform
-      POSTGRES_DB: platform
-    ports:
-      - "5435:5432"
-    volumes:
-      - platform_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U platform"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   api:
     build: .
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -28,13 +12,10 @@ services:
     volumes:
       - ./app:/app/app
       - ./alembic:/app/alembic
-      # mTLS client cert for asaas_payment -- reused from
-      #   asaas_payment/certs/dev-client.{crt,key} + ca.crt
+      # mTLS client cert for asaas_payment -- CN=devbutter-platform, signed
+      #   by asaas_payment/certs/ca.{crt,key}
       # (copy into ./certs/; see .env's ASAAS_CLIENT_CERT_PATH comment)
       - ./certs:/app/certs:ro
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       default:
       devbutter_shared:
@@ -48,9 +29,6 @@ services:
         - path: ./alembic
           action: sync+restart
           target: /app/alembic
-
-volumes:
-  platform_db_data:
 
 networks:
   default:
