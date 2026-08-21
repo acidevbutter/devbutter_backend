@@ -1,4 +1,14 @@
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# pydantic-settings parses .env into this Settings object only -- it never
+# touches os.environ. boto3 (core/clients/relay_client.py) reads AWS
+# credentials directly from the real process environment, so when running
+# locally via `poetry run uvicorn` (not docker-compose's own `env_file:`,
+# which does populate real container env vars) .env needs to be loaded here
+# too. load_dotenv() never overrides a variable already set in the real
+# environment, matching pydantic-settings' own precedence.
+load_dotenv()
 
 
 class Settings(BaseSettings):

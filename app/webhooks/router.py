@@ -15,11 +15,18 @@ from app.webhooks.service import WebhookService
 
 
 def get_webhook_service(
-    db: DbSession, relay_client: Annotated[RelayClient, Depends(get_relay_client)]
+    db: DbSession,
+    relay_client: Annotated[
+        RelayClient,
+        Depends(get_relay_client),
+    ],
 ) -> WebhookService:
     notification_service = NotificationService(relay_client)
     return WebhookService(
-        InvoiceRepository(db), OrderRepository(db), AccountRepository(db), notification_service
+        InvoiceRepository(db),
+        OrderRepository(db),
+        AccountRepository(db),
+        notification_service,
     )
 
 
@@ -36,7 +43,10 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 async def receive_asaas_webhook(
     payload: AsaasWebhookEvent,
     service: WebhookServiceDep,
-    asaas_access_token: Annotated[str | None, Header(alias="asaas-access-token")] = None,
+    asaas_access_token: Annotated[
+        str | None,
+        Header(alias="asaas-access-token"),
+    ] = None,
 ) -> None:
     if (
         not settings.asaas_webhook_access_token

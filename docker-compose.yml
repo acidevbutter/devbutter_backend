@@ -20,21 +20,17 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8002:8000"
+    # All service DNS names, credentials, and secrets come from .env --
+    # single source of truth, see that file for what resolves today vs. what
+    # still needs a network entry added on the sibling repos' side.
     env_file:
       - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://platform:platform@db:5432/platform
-      # Reach the sibling services by their devbutter_shared aliases.
-      BUTTER_MIND_BASE_URL: http://mind-api:8000
-      ASAAS_PAYMENT_BASE_URL: https://asaas-nginx:8443
-      RELAY_SQS_ENDPOINT_URL: http://elasticmq:9324
-      AWS_ACCESS_KEY_ID: local-dev
-      AWS_SECRET_ACCESS_KEY: local-dev
     volumes:
       - ./app:/app/app
       - ./alembic:/app/alembic
-      # mTLS client cert for asaas_payment -- generate with:
-      #   asaas_payment/scripts/generate_dev_certs.sh devbutter-platform
+      # mTLS client cert for asaas_payment -- reused from
+      #   asaas_payment/certs/dev-client.{crt,key} + ca.crt
+      # (copy into ./certs/; see .env's ASAAS_CLIENT_CERT_PATH comment)
       - ./certs:/app/certs:ro
     depends_on:
       db:
