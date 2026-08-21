@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "5435:5432"
+    volumes:
+      - platform_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://platform:platform@db:5432/platform
+      # Reach the sibling services by their devbutter_shared aliases.
+      BUTTER_MIND_BASE_URL: http://mind-api:8000
+      ASAAS_PAYMENT_BASE_URL: https://asaas-nginx:8443
+      RELAY_SQS_ENDPOINT_URL: http://elasticmq:9324
+      AWS_ACCESS_KEY_ID: local-dev
+      AWS_SECRET_ACCESS_KEY: local-dev
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      # mTLS client cert for asaas_payment -- generate with:
+      #   asaas_payment/scripts/generate_dev_certs.sh devbutter-platform
+      - ./certs:/app/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      default:
+      devbutter_shared:
+        aliases:
+          - platform-api
+    develop:
+      watch:
+        - path: ./app
+          action: sync+restart
+          target: /app/app
+        - path: ./alembic
+          action: sync+restart
+          target: /app/alembic
+
+volumes:
+  platform_db_data:
+
+networks:
+  default:
+  devbutter_shared:
+    external: true
