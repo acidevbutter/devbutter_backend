@@ -5,7 +5,7 @@ from uuid import UUID
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.accounts.models import Account
+from app.accounts.models import Account, User
 from app.conversations.models import Conversation
 from app.invoices.models import Invoice
 from app.orders.models import Order
@@ -13,8 +13,8 @@ from app.quotes.models import Quote
 from tests.conftest import auth_headers, signup
 
 
-async def _make_admin(db_session: AsyncSession, account: Account) -> None:
-    account.is_admin = True
+async def _make_admin(db_session: AsyncSession, user: User) -> None:
+    user.is_admin = True
     await db_session.commit()
 
 
@@ -22,15 +22,17 @@ async def test_admin_cross_account_views_and_account_invoices(
     client: AsyncClient, db_session: AsyncSession
 ):
     client_tokens = await signup(
-        client, email="views-client@example.com", name="Cliente Views", business_name="Views Ltda."
+        client, email="views-client@example.com", name="Cliente Views", company_name="Views Ltda."
     )
     admin_tokens = await signup(client, email="views-admin@example.com")
     # Resolve the admin through the authenticated account response so this test
     # does not depend on token internals.
     admin_me = await client.get("/accounts/me", headers=auth_headers(admin_tokens))
+    admin_user = await db_session.get(User, UUID(admin_me.json()["user_id"]))
+    assert admin_user is not None
+    await _make_admin(db_session, admin_user)
     admin = await db_session.get(Account, UUID(admin_me.json()["id"]))
     assert admin is not None
-    await _make_admin(db_session, admin)
 
     client_me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
     client_id = UUID(client_me.json()["id"])
@@ -48,6 +50,7 @@ async def test_admin_cross_account_views_and_account_invoices(
     quote = Quote(
         account_id=client_id,
         conversation_id=conversation.id,
+        reference="COT-9000",
         source="ai",
         status="approved",
         scope_summary="Loja online",
@@ -117,7 +120,7 @@ async def test_admin_cross_account_views_and_account_invoices(
 
     catalog_response = await client.get("/admin/catalog", headers=headers)
     assert catalog_response.status_code == 200
-    assert catalog_response.json()["items"][0]["account_name"] == "Cliente Views"
+    assert catalog_response.json()["items"][0]["account_name"] == "Views Ltda."
 
     quotes_response = await client.get("/admin/quotes/all?status=approved", headers=headers)
     assert quotes_response.status_code == 200
@@ -154,7 +157,7 @@ async def test_knowledge_entries_are_admin_only_and_persistent(
     # The fixture database has no admin bootstrap endpoint; promote this test
     # account through the same explicit local bootstrap used by production docs.
     admin_me = await client.get("/accounts/me", headers=auth_headers(admin_tokens))
-    admin = await db_session.get(Account, UUID(admin_me.json()["id"]))
+    admin = await db_session.get(User, UUID(admin_me.json()["user_id"]))
     assert admin is not None
     await _make_admin(db_session, admin)
 

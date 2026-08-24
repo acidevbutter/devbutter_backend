@@ -21,12 +21,24 @@ class Settings(BaseSettings):
 
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
 
+    # -- notifications/service.py: builds links (e.g. password_setup_url)
+    # embedded in emails. No trailing slash.
+    frontend_base_url: str = "http://localhost:3000"
+
     # JWT (access + refresh) -- stateless auth, least coupling to the Next.js
     # frontend since it doesn't need to relay session cookies cross-origin.
     jwt_secret: str = "dev-only-insecure-secret-change-me"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 30
+
+    # -- conversations/socket_handlers.py: the one place that reads the JWT
+    # from a cookie instead of an Authorization header. Browser Socket.IO
+    # clients can't set custom headers on the initial engineio handshake, so
+    # the frontend relies on its existing httpOnly cookie (same name/value it
+    # already sets for portal REST calls) sent via CORS credentials instead.
+    # Must match devbutter_frontend's PORTAL_ACCESS_COOKIE (src/lib/portal/config.ts).
+    portal_access_cookie_name: str = "db_portal_at"
 
     # -- core/clients/asaas_client.py: mTLS client of asaas_payment, reusing
     # its scripts/generate_dev_certs.sh cert format. devbutter_platform never

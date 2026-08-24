@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.accounts.router import CurrentAccount
+from app.accounts.router import CurrentAccount, CurrentUser
 from app.core.dependencies import DbSession
 from app.core.exceptions import NotFoundError
 from app.invoices.repository import InvoiceRepository
@@ -33,11 +33,12 @@ account_router = APIRouter(prefix="/invoices", tags=["invoices"])
 async def list_order_invoices(
     order_id: uuid.UUID,
     account: CurrentAccount,
+    user: CurrentUser,
     service: InvoiceServiceDep,
     order_repository: OrderRepositoryDep,
 ) -> list[InvoiceRead]:
     order = await order_repository.get(order_id)
-    if order is None or (order.account_id != account.id and not account.is_admin):
+    if order is None or (order.account_id != account.id and not user.is_admin):
         raise NotFoundError("Order not found")
     invoices = await service.list_for_order(order_id)
     return [InvoiceRead.model_validate(i) for i in invoices]

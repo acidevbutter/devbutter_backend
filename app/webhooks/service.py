@@ -91,4 +91,10 @@ class WebhookService:
         account = await self.account_repository.get(order.account_id)
         if account is None:
             return
-        self.notification_service.notify_payment_status_changed(account, invoice)
+        company = await self.account_repository.get_company(account.company_id)
+        if company is None:
+            return
+        user = await self.account_repository.get_user(company.user_id)
+        if user is None:
+            return
+        self.notification_service.notify_payment_status_changed(user, invoice)

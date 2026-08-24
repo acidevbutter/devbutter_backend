@@ -1,11 +1,16 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import socketio
 from fastapi import FastAPI
 
 from app.accounts.router import router as accounts_router
+from app.admin.companies_router import router as admin_companies_router
+from app.admin.payments_router import router as admin_payments_router
 from app.admin.router import router as admin_router
+from app.conversations import socket_handlers  # noqa: F401  (registers Socket.IO event handlers)
 from app.conversations.router import router as conversations_router
+from app.conversations.socket_server import sio
 from app.core.clients.asaas_client import close_asaas_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
@@ -53,9 +58,19 @@ app.include_router(webhooks_router)
 app.include_router(admin_webhooks_router)
 app.include_router(service_catalog_router)
 app.include_router(admin_router)
+app.include_router(admin_payments_router)
+app.include_router(admin_companies_router)
 app.include_router(knowledge_router)
 
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ASGI app actually served at runtime: mounts the Socket.IO server (real-time
+# chat transport, see docs/plano-streaming-socketio-chat.md) alongside the
+# FastAPI `app` above. Tests and internal code should keep importing `app`
+# directly (e.g. httpx.ASGITransport(app=app)) -- only the process entrypoint
+# (Dockerfile CMD) needs `asgi_app`.
+asgi_app = socketio.ASGIApp(sio, other_asgi_app=app)

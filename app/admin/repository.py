@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.accounts.models import Account, AsaasCustomerLink
+from app.accounts.models import Account, AsaasCustomerLink, AsaasSubaccountLink, Company, User
 from app.conversations.models import Conversation
 from app.invoices.models import Invoice
 from app.orders.models import Order
@@ -27,16 +27,26 @@ class AdminRepository:
     async def list_clients(
         self, *, search: str | None, offset: int, limit: int
     ) -> tuple[list[dict[str, Any]], int]:
-        query = select(Account, AsaasCustomerLink.asaas_customer_id).outerjoin(
-            AsaasCustomerLink, AsaasCustomerLink.account_id == Account.id
+        query = select(Account, Company, User, AsaasCustomerLink.asaas_customer_id).join(
+            Company, Company.id == Account.company_id
+        ).join(
+            User, User.id == Company.user_id
+        ).outerjoin(
+            AsaasCustomerLink, AsaasCustomerLink.company_id == Company.id
         )
-        count_query = select(func.count()).select_from(Account)
+        count_query = select(func.count()).select_from(Account).join(
+            Company, Company.id == Account.company_id
+        ).join(
+            User, User.id == Company.user_id
+        )
         if search:
             term = f"%{search}%"
             condition = or_(
-                Account.name.ilike(term),
-                Account.email.ilike(term),
-                Account.document.ilike(term),
+                User.name.ilike(term),
+                User.email.ilike(term),
+                User.cpf.ilike(term),
+                Company.cnpj.ilike(term),
+                Account.product_name.ilike(term),
             )
             query = query.where(condition)
             count_query = count_query.where(condition)
@@ -46,10 +56,12 @@ class AdminRepository:
             query.order_by(Account.created_at.desc()).offset(offset).limit(limit)
         )
         rows = []
-        for account, asaas_customer_id in result.all():
+        for account, company, user, asaas_customer_id in result.all():
             rows.append(
                 {
                     "account": account,
+                    "company": company,
+                    "user": user,
                     "asaas_customer_id": asaas_customer_id,
                     "quotes_count": await self._count(Quote, Quote.account_id == account.id),
                     "orders_count": await self._count(Order, Order.account_id == account.id),
@@ -59,14 +71,16 @@ class AdminRepository:
 
     async def get_client(self, account_id: uuid.UUID) -> dict[str, Any] | None:
         result = await self.session.execute(
-            select(Account, AsaasCustomerLink.asaas_customer_id)
-            .outerjoin(AsaasCustomerLink, AsaasCustomerLink.account_id == Account.id)
+            select(Account, Company, User, AsaasCustomerLink.asaas_customer_id)
+            .join(Company, Company.id == Account.company_id)
+            .join(User, User.id == Company.user_id)
+            .outerjoin(AsaasCustomerLink, AsaasCustomerLink.company_id == Company.id)
             .where(Account.id == account_id)
         )
         row = result.one_or_none()
         if row is None:
             return None
-        account, asaas_customer_id = row
+        account, company, user, asaas_customer_id = row
         counts = {
             "quotes": await self._count(Quote, Quote.account_id == account_id),
             "orders": await self._count(Order, Order.account_id == account_id),
@@ -85,6 +99,8 @@ class AdminRepository:
         }
         return {
             "account": account,
+            "company": company,
+            "user": user,
             "asaas_customer_id": asaas_customer_id,
             "counts": counts,
         }
@@ -98,19 +114,24 @@ class AdminRepository:
         limit: int,
     ) -> tuple[list[dict[str, Any]], int]:
         query = (
-            select(Order, Account.name, func.coalesce(func.sum(Invoice.amount), Decimal("0")))
+            select(
+                Order,
+                Company.name,
+                func.coalesce(func.sum(Invoice.amount), Decimal("0")),
+            )
             .join(Account, Account.id == Order.account_id)
+            .join(Company, Company.id == Account.company_id)
             .outerjoin(Invoice, Invoice.order_id == Order.id)
-            .group_by(Order.id, Account.name)
+            .group_by(Order.id, Company.name)
         )
         count_query = select(func.count()).select_from(Order).join(
             Account, Account.id == Order.account_id
-        )
+        ).join(Company, Company.id == Account.company_id)
         if status_:
             query = query.where(Order.status == status_)
             count_query = count_query.where(Order.status == status_)
         if search:
-            condition = Account.name.ilike(f"%{search}%")
+            condition = Company.name.ilike(f"%{search}%")
             query = query.where(condition)
             count_query = count_query.where(condition)
 
@@ -136,9 +157,10 @@ class AdminRepository:
         limit: int,
     ) -> tuple[list[dict[str, Any]], int, datetime | None]:
         query = (
-            select(Invoice, Account.name)
+            select(Invoice, Company.name)
             .join(Order, Order.id == Invoice.order_id)
             .join(Account, Account.id == Order.account_id)
+            .join(Company, Company.id == Account.company_id)
         )
         count_query = select(func.count()).select_from(Invoice)
         if status_:
@@ -168,9 +190,11 @@ class AdminRepository:
         overdue_amount = await self._sum(Invoice.amount, Invoice.status == "OVERDUE")
         overdue_invoice_count = await self._count(Invoice, Invoice.status == "OVERDUE")
         overdue_client = await self.session.execute(
-            select(Account.name)
-            .join(Order, Order.account_id == Account.id)
-            .join(Invoice, Invoice.order_id == Order.id)
+            select(Company.name)
+            .select_from(Invoice)
+            .join(Order, Invoice.order_id == Order.id)
+            .join(Account, Order.account_id == Account.id)
+            .join(Company, Account.company_id == Company.id)
             .where(Invoice.status == "OVERDUE")
             .order_by(Invoice.amount.desc())
             .limit(1)
@@ -187,8 +211,9 @@ class AdminRepository:
 
     async def list_catalog(self) -> list[dict[str, Any]]:
         result = await self.session.execute(
-            select(ServiceCatalogEntry, Account.name)
+            select(ServiceCatalogEntry, Company.name)
             .join(Account, Account.id == ServiceCatalogEntry.account_id)
+            .join(Company, Company.id == Account.company_id)
             .order_by(ServiceCatalogEntry.created_at.desc())
         )
         return [
@@ -206,9 +231,9 @@ class AdminRepository:
             .limit(1)
             .scalar_subquery()
         )
-        query = select(Conversation, Account.name, quote_id_subquery).outerjoin(
+        query = select(Conversation, Company.name, quote_id_subquery).outerjoin(
             Account, Account.id == Conversation.account_id
-        )
+        ).outerjoin(Company, Company.id == Account.company_id)
         count_query = select(func.count()).select_from(Conversation)
         if has_quote is True:
             query = query.where(quote_id_subquery.is_not(None))
@@ -241,8 +266,9 @@ class AdminRepository:
 
     async def get_conversation(self, conversation_id: uuid.UUID) -> dict[str, Any] | None:
         result = await self.session.execute(
-            select(Conversation, Account.name)
+            select(Conversation, Company.name)
             .outerjoin(Account, Account.id == Conversation.account_id)
+            .outerjoin(Company, Company.id == Account.company_id)
             .where(Conversation.id == conversation_id)
         )
         row = result.one_or_none()
@@ -303,21 +329,65 @@ class AdminRepository:
                     }
                 )
         account_result = await self.session.execute(
-            select(Account).order_by(Account.created_at.desc()).limit(10)
+            select(Account, Company, User.name)
+            .join(Company, Company.id == Account.company_id)
+            .join(User, User.id == Company.user_id)
+            .order_by(Account.created_at.desc())
+            .limit(10)
         )
         activities.extend(
             {
                 "kind": "client_created",
-                "message": f"Cliente {account.name} criado",
+                "message": f"Cliente {company.name} criado por {user_name}",
                 "at": account.created_at,
             }
-            for account in account_result.scalars()
+            for account, company, user_name in account_result.all()
         )
         return sorted(
             activities,
             key=lambda item: _utc_sort_key(item["at"]),
             reverse=True,
         )[:10]
+
+    async def list_companies(
+        self, *, search: str | None, offset: int, limit: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        query = select(Company, User, AsaasSubaccountLink).join(
+            User, User.id == Company.user_id
+        ).outerjoin(AsaasSubaccountLink, AsaasSubaccountLink.company_id == Company.id)
+        count_query = select(func.count()).select_from(Company).join(
+            User, User.id == Company.user_id
+        )
+        if search:
+            term = f"%{search}%"
+            condition = or_(Company.name.ilike(term), Company.cnpj.ilike(term))
+            query = query.where(condition)
+            count_query = count_query.where(condition)
+
+        total = int((await self.session.execute(count_query)).scalar_one())
+        result = await self.session.execute(
+            query.order_by(Company.created_at.desc()).offset(offset).limit(limit)
+        )
+        return (
+            [
+                {"company": company, "user": user, "link": link}
+                for company, user, link in result.all()
+            ],
+            total,
+        )
+
+    async def get_company_detail(self, company_id: uuid.UUID) -> dict[str, Any] | None:
+        result = await self.session.execute(
+            select(Company, User, AsaasSubaccountLink)
+            .join(User, User.id == Company.user_id)
+            .outerjoin(AsaasSubaccountLink, AsaasSubaccountLink.company_id == Company.id)
+            .where(Company.id == company_id)
+        )
+        row = result.first()
+        if row is None:
+            return None
+        company, user, link = row
+        return {"company": company, "user": user, "link": link}
 
 
 def _utc_sort_key(value: datetime) -> datetime:

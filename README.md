@@ -15,7 +15,7 @@ clients. See `app/core/clients/`.
 Client app (devbutter_frontend)
         |
         v
-devbutter_platform (this service) -- Postgres (accounts, conversations, quotes, orders, invoices, catalog, knowledge, webhook_events)
+devbutter_platform (this service) -- Postgres (users, companies, accounts, conversations, quotes, orders, invoices, catalog, knowledge, webhook_events)
         |            |             |
         | mTLS        | HTTP        | boto3 SQS
         v            v             v
@@ -30,7 +30,7 @@ view and an integration adapter (see `docs/architecture/diagrams/backend-structu
 
 | Module | Responsibility |
 |---|---|
-| `accounts` | signup/login (JWT access+refresh), profile, the `AsaasCustomerLink` |
+| `accounts` | users/credentials, companies, account products, selected-account JWT and the `AsaasCustomerLink` |
 | `conversations` | wraps a `butter_mind` guided-diagnosis session; local transcript mirror |
 | `quotes` | draft (`source`: `ai` \| `manual`), status (`draft`/`approved`/`edited`/`rejected`) |
 | `orders` | created on quote approval; drives Asaas Customer + Invoice creation |
@@ -98,8 +98,8 @@ poetry run pytest
 poetry run ruff check .
 ```
 
-Covers: signup/login/refresh and the email-uniqueness 409, service-catalog CRUD with ownership
-checks, admin cross-account views, knowledge-entry CRUD and ownership/role checks, the
+Covers: signup/login/refresh and the email-uniqueness 409, multi-account selection and scoped
+ownership checks, admin cross-account views, knowledge-entry CRUD and ownership/role checks, the
 `log_call`/`log_errors` decorators (sync, async, error path), and the full
 manual-quote → admin-approval → Order/Asaas-Customer/Invoice orchestration with `asaas_payment` and
 `butter_relay` faked at the client boundary — including the 409 on re-approving an already-approved
@@ -107,10 +107,12 @@ quote, the Asaas webhook's idempotent status update, and webhook event listing/r
 
 ## Auth
 
-JWT access (short-lived) + refresh (long-lived) tokens — stateless, least coupling for the Next.js
-frontend (see `docs/architecture/devbutter-platform-backend.md`, "Stack"). `Account.is_admin` gates
-the `/admin/*` routes; there's no separate admin table — Marcos is an `Account` with the flag set
-(flip it directly in the database for the first admin; no self-serve promotion endpoint exists).
+`users` stores email, password hash, name, CPF and phone. A `User` owns one or more `companies`; each
+`Company` stores its name/CNPJ and owns one or more product `accounts`. Quotes, orders, invoices and
+catalog entries remain account-scoped, while the `AsaasCustomerLink` is company-scoped. JWT access and
+refresh tokens carry both the user and selected account; `GET /accounts` lists the selector options and
+`POST /accounts/select` changes the active context. `User.is_admin` gates `/admin/*`; there is no separate
+admin table (flip the flag directly in the database for the first admin).
 
 ## What's not implemented here (see architecture doc §8–9 for open questions)
 

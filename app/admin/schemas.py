@@ -1,9 +1,9 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.quotes.schemas import QuoteRead
 
@@ -13,7 +13,8 @@ class AdminClientListItem(BaseModel):
     name: str
     business_name: str | None
     email: str
-    document: str | None
+    cpf: str | None
+    cnpj: str | None
     created_at: datetime
     asaas_customer_id: str | None
     quotes_count: int
@@ -40,7 +41,8 @@ class AdminClientDetailRead(BaseModel):
     name: str
     business_name: str | None
     email: str
-    document: str | None
+    cpf: str | None
+    cnpj: str | None
     phone: str | None
     created_at: datetime
     asaas_customer_id: str | None
@@ -156,3 +158,70 @@ class AdminQuoteListRead(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AdminCompanyListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    cnpj: str | None
+    owner_name: str
+    has_payment_method: bool
+    onboarding_status: str | None
+    approval_status: str | None
+    split_quota_percent: Decimal | None
+    used_percent: Decimal | None
+
+
+class AdminCompanyListRead(BaseModel):
+    items: list[AdminCompanyListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminSubaccountLinkRead(BaseModel):
+    asaas_account_id: str
+    wallet_id: str | None
+    onboarding_status: str | None
+    approval_status: str | None
+    split_quota_percent: Decimal | None
+    quota_set_by: uuid.UUID | None
+    quota_updated_at: datetime | None
+
+
+class AdminCompanyDetailRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    cnpj: str | None
+    owner_name: str
+    owner_email: str
+    link: AdminSubaccountLinkRead | None
+    split_rules: list[dict[str, Any]]
+    access_tokens: dict[str, Any]
+    used_percent: Decimal | None
+
+
+class AdminSplitQuotaUpdate(BaseModel):
+    split_quota_percent: Decimal | None
+
+
+class AdminLinkSubaccountRequest(BaseModel):
+    """Either references an existing subaccount (asaas_account_id) or, when
+    absent, is forwarded as a SubaccountCreate payload to provision a new
+    one -- see AdminCompaniesService.link_subaccount.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    asaas_account_id: str | None = None
+
+
+class AdminCompanyFeatureRead(BaseModel):
+    id: uuid.UUID
+    feature_code: str
+    status: str
+    asaas_access_token_id: str | None
+    enabled_by: uuid.UUID | None
+    enabled_at: datetime | None
+    disabled_at: datetime | None
+    last_error: str | None

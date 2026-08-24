@@ -21,6 +21,10 @@ class Quote(Base):
     conversation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("conversations.id"), default=None
     )
+    # Human-readable "COT-1000" id, assigned from QuoteReferenceCounter at
+    # creation -- see QuoteRepository._next_reference. Not the primary key so
+    # nothing else has to change if the format ever does.
+    reference: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     source: Mapped[str] = mapped_column(String(10))  # "ai" | "manual"
     status: Mapped[str] = mapped_column(
         String(20), default="draft"
@@ -34,3 +38,18 @@ class Quote(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class QuoteReferenceCounter(Base):
+    """Singleton row (id=1) handing out the next Quote.reference number.
+    A plain table instead of a Postgres SEQUENCE so it behaves identically
+    under the in-memory SQLite tests (schema built from these models via
+    Base.metadata.create_all, not by running Alembic) and real Postgres --
+    same reasoning app/knowledge/repository.py documents for avoiding a
+    Postgres-only similarity operator.
+    """
+
+    __tablename__ = "quote_reference_counters"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    next_value: Mapped[int] = mapped_column(default=1000)

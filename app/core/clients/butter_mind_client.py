@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -15,6 +17,15 @@ class ButterMindClient:
     (problem_summary, services_of_interest, budget_range, timeline) that
     conversations/service.py turns into a Quote(source="ai") -- butter_mind
     itself has no write access to Quote/Order/Invoice.
+
+    submit_diagnosis's response (DiagnosisExtraction) also includes
+    contact_name, contact_email, contact_phone, company_name and cnpj --
+    gathered by the LLM during the chat itself (see butter_mind's
+    DIAGNOSIS_SYSTEM_PROMPT/EXTRACTION_SYSTEM_PROMPT in
+    app/diagnosis/service.py), not passed in as call arguments. This is what
+    AccountService.get_or_create_from_extraction uses to create the visitor's
+    User/Company/Account without a separate signup form -- see
+    docs/plano-onboarding-conversa-primeiro.md.
     """
 
     def __init__(self) -> None:
@@ -38,28 +49,34 @@ class ButterMindClient:
         )
 
     @log_call
-    async def submit_diagnosis(
-        self,
-        mind_session_id: str,
-        *,
-        contact_name: str | None = None,
-        contact_email: str | None = None,
-        contact_phone: str | None = None,
-        company_name: str | None = None,
-    ) -> dict[str, Any]:
-        params = {
-            k: v
-            for k, v in {
-                "contact_name": contact_name,
-                "contact_email": contact_email,
-                "contact_phone": contact_phone,
-                "company_name": company_name,
-            }.items()
-            if v is not None
-        }
-        return await self._request(
-            "POST", f"/diagnosis/sessions/{mind_session_id}/submit", params=params
-        )
+    async def submit_diagnosis(self, mind_session_id: str) -> dict[str, Any]:
+        return await self._request("POST", f"/diagnosis/sessions/{mind_session_id}/submit")
+
+    @log_call
+    async def stream_diagnosis_message(
+        self, mind_session_id: str, content: str
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Relays butter_mind's SSE stream for a diagnosis turn as parsed event
+        dicts (`{"type": "delta", ...}` / `{"type": "done", ...}`) -- used by
+        the Socket.IO handlers to forward chunks to the browser as they arrive.
+        """
+        try:
+            async with self._client.stream(
+                "POST",
+                f"/diagnosis/sessions/{mind_session_id}/messages/stream",
+                json={"content": content},
+            ) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    raise UpstreamServiceError(
+                        f"butter_mind returned {response.status_code} for stream messages: "
+                        f"{body.decode()}"
+                    )
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        yield json.loads(line.removeprefix("data: "))
+        except httpx.HTTPError as exc:
+            raise UpstreamServiceError(f"butter_mind stream request failed: {exc}") from exc
 
     async def _request(
         self,

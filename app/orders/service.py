@@ -42,19 +42,25 @@ class OrderService:
         account = await self.account_repository.get(quote.account_id)
         if account is None:
             raise NotFoundError(f"Account {quote.account_id} not found")
+        company = await self.account_repository.get_company(account.company_id)
+        if company is None:
+            raise NotFoundError(f"Company {account.company_id} not found")
+        user = await self.account_repository.get_user(company.user_id)
+        if user is None:
+            raise NotFoundError(f"User {company.user_id} not found")
 
-        link = await self.account_repository.get_asaas_customer_link(account.id)
+        link = await self.account_repository.get_asaas_customer_link(company.id)
         if link is None:
             customer = await self.asaas_client.create_customer(
                 {
-                    "name": account.business_name or account.name,
-                    "email": account.email,
-                    "cpfCnpj": account.document,
-                    "mobilePhone": account.phone,
+                    "name": company.name,
+                    "email": user.email,
+                    "cpfCnpj": company.cnpj or user.cpf,
+                    "mobilePhone": user.phone,
                 }
             )
             link = await self.account_repository.create_asaas_customer_link(
-                account.id, customer["id"]
+                company.id, customer["id"]
             )
 
         payment = await self.asaas_client.create_payment(
@@ -78,7 +84,7 @@ class OrderService:
         )
 
         order = await self.repository.set_status(order, "invoiced")
-        self.notification_service.notify_quote_approved(account, quote, invoice)
+        self.notification_service.notify_quote_approved(user, quote, invoice)
         return order
 
     async def get(self, order_id: uuid.UUID) -> Order:

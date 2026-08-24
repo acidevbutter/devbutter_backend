@@ -22,6 +22,7 @@ httpx = { extras = ["http2"], version = "^0.27.0" }
 boto3 = "^1.35.0"
 bcrypt = "^4.2.0"
 pyjwt = "^2.9.0"
+python-socketio = "^5.16.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"

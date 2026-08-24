@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.accounts.repository import AccountRepository
-from app.accounts.router import CurrentAccount
+from app.accounts.router import CurrentAccount, CurrentUser
 from app.core.clients.asaas_client import AsaasClient, get_asaas_client
 from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
@@ -49,9 +49,12 @@ async def list_my_orders(account: CurrentAccount, service: OrderServiceDep) -> l
 
 @router.get("/{order_id}", response_model=OrderRead, summary="Get an order")
 async def get_order(
-    order_id: uuid.UUID, account: CurrentAccount, service: OrderServiceDep
+    order_id: uuid.UUID,
+    account: CurrentAccount,
+    user: CurrentUser,
+    service: OrderServiceDep,
 ) -> OrderRead:
     order = await service.get(order_id)
-    if order.account_id != account.id and not account.is_admin:
+    if order.account_id != account.id and not user.is_admin:
         raise NotFoundError("Order not found")
     return OrderRead.model_validate(order)

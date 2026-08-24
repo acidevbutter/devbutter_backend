@@ -22,10 +22,16 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
-def _create_token(account_id: uuid.UUID, token_type: TokenType, expires_delta: timedelta) -> str:
+def _create_token(
+    user_id: uuid.UUID,
+    account_id: uuid.UUID,
+    token_type: TokenType,
+    expires_delta: timedelta,
+) -> str:
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
-        "sub": str(account_id),
+        "sub": str(user_id),
+        "account_id": str(account_id),
         "type": token_type.value,
         "iat": now,
         "exp": now + expires_delta,
@@ -36,15 +42,21 @@ def _create_token(account_id: uuid.UUID, token_type: TokenType, expires_delta: t
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(account_id: uuid.UUID) -> str:
+def create_access_token(user_id: uuid.UUID, account_id: uuid.UUID) -> str:
     return _create_token(
-        account_id, TokenType.ACCESS, timedelta(minutes=settings.jwt_access_token_expire_minutes)
+        user_id,
+        account_id,
+        TokenType.ACCESS,
+        timedelta(minutes=settings.jwt_access_token_expire_minutes),
     )
 
 
-def create_refresh_token(account_id: uuid.UUID) -> str:
+def create_refresh_token(user_id: uuid.UUID, account_id: uuid.UUID) -> str:
     return _create_token(
-        account_id, TokenType.REFRESH, timedelta(days=settings.jwt_refresh_token_expire_days)
+        user_id,
+        account_id,
+        TokenType.REFRESH,
+        timedelta(days=settings.jwt_refresh_token_expire_days),
     )
 
 
@@ -52,7 +64,7 @@ class InvalidTokenError(Exception):
     pass
 
 
-def decode_token(token: str, expected_type: TokenType) -> uuid.UUID:
+def decode_token(token: str, expected_type: TokenType) -> tuple[uuid.UUID, uuid.UUID]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except jwt.PyJWTError as exc:
@@ -60,6 +72,6 @@ def decode_token(token: str, expected_type: TokenType) -> uuid.UUID:
     if payload.get("type") != expected_type.value:
         raise InvalidTokenError(f"Expected a {expected_type.value} token")
     try:
-        return uuid.UUID(payload["sub"])
+        return uuid.UUID(payload["sub"]), uuid.UUID(payload["account_id"])
     except (KeyError, ValueError) as exc:
         raise InvalidTokenError("Token subject is malformed") from exc

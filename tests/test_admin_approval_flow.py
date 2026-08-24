@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.accounts.models import Account
+from app.accounts.models import User
 from app.core.clients.asaas_client import get_asaas_client
 from app.core.clients.relay_client import get_relay_client
 from app.main import app
@@ -39,16 +39,16 @@ class FakeRelayClient:
 
 
 async def _make_admin(db_session: AsyncSession, email: str) -> None:
-    result = await db_session.execute(select(Account).where(Account.email == email))
-    account = result.scalar_one()
-    account.is_admin = True
+    result = await db_session.execute(select(User).where(User.email == email))
+    user = result.scalar_one()
+    user.is_admin = True
     await db_session.commit()
 
 
 async def test_approve_quote_creates_order_customer_link_and_invoice(
     client: AsyncClient, db_session: AsyncSession
 ):
-    client_tokens = await signup(client, email="client@example.com", document="12345678900")
+    client_tokens = await signup(client, email="client@example.com", cpf="12345678900")
     admin_tokens = await signup(client, email="marcos@example.com")
     await _make_admin(db_session, "marcos@example.com")
 

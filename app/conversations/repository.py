@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,15 +21,27 @@ class ConversationRepository:
         return conversation
 
     async def append_messages(
-        self, conversation: Conversation, *messages: dict[str, str]
+        self,
+        conversation: Conversation,
+        *messages: dict[str, str],
+        ready_to_submit: bool,
+        draft_preview: dict[str, Any] | None = None,
     ) -> Conversation:
         conversation.transcript = [*conversation.transcript, *messages]
+        conversation.ready_to_submit = ready_to_submit
+        conversation.draft_preview = draft_preview
         await self.session.commit()
         await self.session.refresh(conversation)
         return conversation
 
     async def mark_completed(self, conversation: Conversation) -> Conversation:
         conversation.status = "completed"
+        await self.session.commit()
+        await self.session.refresh(conversation)
+        return conversation
+
+    async def link_account(self, conversation: Conversation, account_id: uuid.UUID) -> Conversation:
+        conversation.account_id = account_id
         await self.session.commit()
         await self.session.refresh(conversation)
         return conversation

@@ -119,10 +119,11 @@ async def list_clients(
         items=[
             AdminClientListItem(
                 id=row["account"].id,
-                name=row["account"].name,
-                business_name=row["account"].business_name,
-                email=row["account"].email,
-                document=row["account"].document,
+                name=row["user"].name,
+                business_name=row["company"].name,
+                email=row["user"].email,
+                cpf=row["user"].cpf,
+                cnpj=row["company"].cnpj,
                 created_at=row["account"].created_at,
                 asaas_customer_id=row["asaas_customer_id"],
                 quotes_count=row["quotes_count"],
@@ -148,13 +149,16 @@ async def get_client(
     if row is None:
         raise NotFoundError("Account not found")
     account = row["account"]
+    company = row["company"]
+    user = row["user"]
     return AdminClientDetailRead(
         id=account.id,
-        name=account.name,
-        business_name=account.business_name,
-        email=account.email,
-        document=account.document,
-        phone=account.phone,
+        name=user.name,
+        business_name=company.name,
+        email=user.email,
+        cpf=user.cpf,
+        cnpj=company.cnpj,
+        phone=user.phone,
         created_at=account.created_at,
         asaas_customer_id=row["asaas_customer_id"],
         asaas_status="vinculado" if row["asaas_customer_id"] else "nao_vinculado",

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.quotes.models import Quote
+from app.quotes.models import Quote, QuoteReferenceCounter
 
 
 class QuoteRepository:
@@ -13,6 +13,17 @@ class QuoteRepository:
 
     async def get(self, quote_id: uuid.UUID) -> Quote | None:
         return await self.session.get(Quote, quote_id)
+
+    async def _next_reference(self) -> str:
+        counter = await self.session.get(QuoteReferenceCounter, 1)
+        if counter is None:
+            counter = QuoteReferenceCounter(id=1, next_value=1000)
+            self.session.add(counter)
+            await self.session.flush()
+        value = counter.next_value
+        counter.next_value = value + 1
+        await self.session.flush()
+        return f"COT-{value}"
 
     async def list_by_account(self, account_id: uuid.UUID) -> list[Quote]:
         result = await self.session.execute(
@@ -39,6 +50,7 @@ class QuoteRepository:
         quote = Quote(
             account_id=account_id,
             conversation_id=conversation_id,
+            reference=await self._next_reference(),
             source=source,
             scope_summary=scope_summary,
             price_range=price_range,
