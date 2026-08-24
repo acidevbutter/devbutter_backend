@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.accounts.repository import AccountRepository
 from app.accounts.router import CurrentAdminAccount
+from app.admin.mind_service import AdminMindService
 from app.admin.repository import AdminRepository
 from app.admin.schemas import (
     AdminCatalogEntryRead,
@@ -22,12 +23,18 @@ from app.admin.schemas import (
     AdminDashboardRead,
     AdminInvoiceListItem,
     AdminInvoiceListRead,
+    AdminMindDashboardRead,
+    AdminMindGovernanceRead,
+    AdminMindGovernanceUpdate,
+    AdminMindTurnMetricRead,
     AdminOrderListItem,
     AdminOrderListRead,
     AdminQuoteListRead,
 )
 from app.admin.service import AdminReadService, AdminService
+from app.conversations.repository import ConversationRepository
 from app.core.clients.asaas_client import AsaasClient, get_asaas_client
+from app.core.clients.butter_mind_client import ButterMindClient, get_butter_mind_client
 from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
 from app.invoices.repository import InvoiceRepository
@@ -66,7 +73,57 @@ def get_admin_read_service(db: DbSession) -> AdminReadService:
 
 AdminReadServiceDep = Annotated[AdminReadService, Depends(get_admin_read_service)]
 
+
+def get_admin_mind_service(
+    db: DbSession,
+    mind_client: Annotated[ButterMindClient, Depends(get_butter_mind_client)],
+) -> AdminMindService:
+    return AdminMindService(ConversationRepository(db), mind_client)
+
+
+AdminMindServiceDep = Annotated[AdminMindService, Depends(get_admin_mind_service)]
+
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/mind/overview", response_model=AdminMindDashboardRead)
+async def get_mind_dashboard(
+    _admin: CurrentAdminAccount, service: AdminMindServiceDep
+) -> AdminMindDashboardRead:
+    return AdminMindDashboardRead.model_validate(await service.dashboard_overview())
+
+
+@router.get("/mind/settings", response_model=AdminMindGovernanceRead)
+async def get_mind_settings(
+    _admin: CurrentAdminAccount, service: AdminMindServiceDep
+) -> AdminMindGovernanceRead:
+    return AdminMindGovernanceRead.model_validate(await service.governance())
+
+
+@router.patch("/mind/settings", response_model=AdminMindGovernanceRead)
+async def update_mind_settings(
+    payload: AdminMindGovernanceUpdate,
+    _admin: CurrentAdminAccount,
+    service: AdminMindServiceDep,
+) -> AdminMindGovernanceRead:
+    return AdminMindGovernanceRead.model_validate(
+        await service.update_governance(payload.model_dump())
+    )
+
+
+@router.get(
+    "/mind/conversations/{conversation_id}/turn-metrics",
+    response_model=list[AdminMindTurnMetricRead],
+)
+async def get_mind_conversation_turn_metrics(
+    conversation_id: uuid.UUID,
+    _admin: CurrentAdminAccount,
+    service: AdminMindServiceDep,
+) -> list[AdminMindTurnMetricRead]:
+    return [
+        AdminMindTurnMetricRead.model_validate(item)
+        for item in await service.conversation_turn_metrics(conversation_id)
+    ]
 
 
 def _pagination(page: int, page_size: int) -> tuple[int, int, int]:

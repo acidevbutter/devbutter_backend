@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # -- core/clients/butter_mind_client.py: plain HTTP, same Docker network.
     butter_mind_base_url: str = "http://mind-api:8000"
     butter_mind_request_timeout_seconds: float = 30.0
+    butter_mind_internal_api_key: str = ""
 
     # -- core/clients/relay_client.py: boto3 SQS publish into butter_relay's
     # shared queue. project_id identifies the "devbutter-platform" Project

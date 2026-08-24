@@ -53,6 +53,29 @@ class ButterMindClient:
         return await self._request("POST", f"/diagnosis/sessions/{mind_session_id}/submit")
 
     @log_call
+    async def get_dashboard_overview(self) -> dict[str, Any]:
+        return await self._internal_request("GET", "/diagnosis/internal/dashboard/overview")
+
+    @log_call
+    async def get_dashboard_settings(self) -> dict[str, Any]:
+        return await self._internal_request("GET", "/diagnosis/internal/dashboard/settings")
+
+    @log_call
+    async def update_dashboard_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._internal_request(
+            "PATCH", "/diagnosis/internal/dashboard/settings", json_body=payload
+        )
+
+    @log_call
+    async def get_diagnosis_turn_metrics(self, mind_session_id: str) -> list[dict[str, Any]]:
+        data = await self._internal_request(
+            "GET", f"/diagnosis/sessions/{mind_session_id}/turn-metrics"
+        )
+        if not isinstance(data, list):
+            raise UpstreamServiceError("butter_mind returned invalid turn metrics payload")
+        return data
+
+    @log_call
     async def stream_diagnosis_message(
         self, mind_session_id: str, content: str
     ) -> AsyncIterator[dict[str, Any]]:
@@ -85,9 +108,12 @@ class ButterMindClient:
         *,
         json_body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         try:
-            response = await self._client.request(method, path, json=json_body, params=params)
+            response = await self._client.request(
+                method, path, json=json_body, params=params, headers=headers
+            )
         except httpx.HTTPError as exc:
             raise UpstreamServiceError(f"butter_mind request failed: {exc}") from exc
         if response.status_code >= 400:
@@ -95,6 +121,22 @@ class ButterMindClient:
                 f"butter_mind returned {response.status_code} for {method} {path}: {response.text}"
             )
         return response.json()
+
+    async def _internal_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+    ) -> Any:
+        if not settings.butter_mind_internal_api_key:
+            raise UpstreamServiceError("BUTTER_MIND_INTERNAL_API_KEY is not configured")
+        return await self._request(
+            method,
+            path,
+            json_body=json_body,
+            headers={"X-Internal-Api-Key": settings.butter_mind_internal_api_key},
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

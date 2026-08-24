@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.quotes.schemas import QuoteRead
 
@@ -106,6 +106,63 @@ class AdminDashboardRead(BaseModel):
     overdue_invoice_count: int
     overdue_client_name: str | None
     recent_activity: list[AdminActivityRead]
+
+
+class AdminMindModelUsageRead(BaseModel):
+    model: str | None
+    turns: int
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    turns_without_token_usage: int
+
+
+class AdminMindDashboardRead(BaseModel):
+    diagnosis_sessions: int
+    sessions_in_progress: int
+    submitted_requests: int
+    possibly_ungrounded_requests: int
+    assistant_turns: int
+    grounded_turns: int
+    turns_without_token_usage: int
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    knowledge_sources: int
+    knowledge_chunks: int
+    last_knowledge_update_at: datetime | None
+    model_usage: list[AdminMindModelUsageRead]
+
+
+class AdminMindGovernanceRead(BaseModel):
+    diagnosis_max_output_tokens: int
+    diagnosis_max_history_messages: int
+    diagnosis_max_turns: int
+    diagnosis_grounding_top_k: int
+    diagnosis_grounding_min_score: float
+    uses_runtime_override: bool
+    maritaca_model: str
+    embeddings_model_name: str
+
+
+class AdminMindGovernanceUpdate(BaseModel):
+    diagnosis_max_output_tokens: int = Field(ge=128, le=4096)
+    diagnosis_max_history_messages: int = Field(ge=2, le=50)
+    diagnosis_max_turns: int = Field(ge=1, le=100)
+    diagnosis_grounding_top_k: int = Field(ge=1, le=10)
+    diagnosis_grounding_min_score: float = Field(ge=0, le=1)
+
+
+class AdminMindTurnMetricRead(BaseModel):
+    id: uuid.UUID
+    assistant_message_id: uuid.UUID
+    chunks_retrieved: list[dict[str, str | float]]
+    chunks_used_count: int
+    input_tokens: int | None
+    cached_input_tokens: int | None
+    output_tokens: int | None
+    model: str | None
+    created_at: datetime
 
 
 class AdminCatalogEntryRead(BaseModel):

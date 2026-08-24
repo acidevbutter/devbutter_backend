@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Adicionada ponte administrativa autenticada para métricas e limites operacionais do
+  `butter_mind`, sem expor a chave interna ao frontend.
 - Adicionada prévia segura do diagnóstico, persistência para retomada e bloqueio server-side de
   `draft-quote` antes de `ready_to_submit`.
 - Separada a identidade em `users`; dados pessoais e credenciais não ficam mais em `accounts`.
