@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Expostos consumo e orçamento mensal de LLM no BFF administrativo da Mind.
+
 - Adicionada ponte administrativa autenticada para métricas e limites operacionais do
   `butter_mind`, sem expor a chave interna ao frontend.
 - Adicionada prévia segura do diagnóstico, persistência para retomada e bloqueio server-side de

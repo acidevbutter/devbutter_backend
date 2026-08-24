@@ -24,6 +24,15 @@ class AdminMindService:
     async def update_governance(self, payload: dict[str, Any]) -> dict[str, Any]:
         return cast(dict[str, Any], await self.mind_client.update_dashboard_settings(payload))
 
+    async def llm_usage_summary(self) -> dict[str, Any]:
+        return cast(dict[str, Any], await self.mind_client.get_llm_usage_summary())
+
+    async def llm_budget(self, flow: str) -> dict[str, Any] | None:
+        return cast(dict[str, Any] | None, await self.mind_client.get_llm_budget(flow))
+
+    async def update_llm_budget(self, flow: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return cast(dict[str, Any], await self.mind_client.update_llm_budget(flow, payload))
+
     async def conversation_turn_metrics(self, conversation_id: uuid.UUID) -> list[dict[str, Any]]:
         conversation = await self.conversations.get(conversation_id)
         if conversation is None:

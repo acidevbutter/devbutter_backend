@@ -54,8 +54,8 @@ view and an integration adapter (see `docs/architecture/diagrams/backend-structu
   network (`mind-api`), driving butter_mind's `/diagnosis/sessions` flow. butter_mind produces the
   schema-validated draft (`problem_summary`, `services_of_interest`, `budget_range`, `timeline`);
   `quotes/service.py` turns that into a `Quote(source="ai")`. butter_mind has no write access to
-  Quote/Order/Invoice. Admin-only `/admin/mind/*` routes proxy metrics and safe governance
-  controls with `BUTTER_MIND_INTERNAL_API_KEY`; this key never reaches the frontend.
+  Quote/Order/Invoice. Admin-only `/admin/mind/*` routes proxy metrics, governance and budgets
+  mensais por fluxo com `BUTTER_MIND_INTERNAL_API_KEY`; esta chave nunca chega ao frontend.
 - **→ `butter_relay`** (`core/clients/relay_client.py`): `boto3` `SendMessage` onto the shared SQS
   queue, tagged with this service's `project_id`. Only builds `{template_key, to, payload}` —
   templates (`devbutter_quote_approved`, `devbutter_payment_status_changed`) must be registered in

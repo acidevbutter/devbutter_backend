@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -64,6 +64,21 @@ class ButterMindClient:
     async def update_dashboard_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._internal_request(
             "PATCH", "/diagnosis/internal/dashboard/settings", json_body=payload
+        )
+
+    @log_call
+    async def get_llm_usage_summary(self) -> dict[str, Any]:
+        return await self._internal_request("GET", "/llm-usage/internal/summary")
+
+    @log_call
+    async def get_llm_budget(self, flow: str) -> dict[str, Any] | None:
+        data = await self._internal_request("GET", f"/llm-usage/internal/budgets/{flow}")
+        return cast(dict[str, Any] | None, data)
+
+    @log_call
+    async def update_llm_budget(self, flow: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._internal_request(
+            "PUT", f"/llm-usage/internal/budgets/{flow}", json_body=payload
         )
 
     @log_call

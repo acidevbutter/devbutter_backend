@@ -165,6 +165,30 @@ class AdminMindTurnMetricRead(BaseModel):
     created_at: datetime
 
 
+class AdminLLMBudgetRead(BaseModel):
+    flow: str
+    monthly_budget_brl: Decimal
+    updated_at: datetime
+
+
+class AdminLLMBudgetUpdate(BaseModel):
+    monthly_budget_brl: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+
+
+class AdminLLMFlowUsageRead(BaseModel):
+    flow: str
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    estimated_cost_brl: Decimal
+    monthly_budget_brl: Decimal | None
+
+
+class AdminLLMUsageSummaryRead(BaseModel):
+    month: str
+    flows: list[AdminLLMFlowUsageRead]
+
+
 class AdminCatalogEntryRead(BaseModel):
     id: uuid.UUID
     account_id: uuid.UUID

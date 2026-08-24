@@ -40,6 +40,27 @@ class FakeMindClient:
     async def update_dashboard_settings(self, payload):
         return {**await self.get_dashboard_settings(), **payload, "uses_runtime_override": True}
 
+    async def get_llm_usage_summary(self):
+        return {
+            "month": "2026-08",
+            "flows": [
+                {
+                    "flow": "diagnosis_chat",
+                    "input_tokens": 120,
+                    "cached_input_tokens": 30,
+                    "output_tokens": 40,
+                    "estimated_cost_brl": "0.002375",
+                    "monthly_budget_brl": "5.00",
+                }
+            ],
+        }
+
+    async def get_llm_budget(self, flow):
+        return {"flow": flow, "monthly_budget_brl": "5.00", "updated_at": "2026-08-24T00:00:00Z"}
+
+    async def update_llm_budget(self, flow, payload):
+        return {**await self.get_llm_budget(flow), **payload}
+
 
 async def test_admin_mind_routes_are_admin_only_and_proxy_private_data(client, db_session):
     user_tokens = await signup(client, email="mind-user@example.com")
@@ -73,3 +94,15 @@ async def test_admin_mind_routes_are_admin_only_and_proxy_private_data(client, d
     assert updated.status_code == 200
     assert updated.json()["uses_runtime_override"] is True
     assert updated.json()["diagnosis_max_output_tokens"] == 768
+
+    usage = await client.get("/admin/mind/usage", headers=auth_headers(admin_tokens))
+    assert usage.status_code == 200
+    assert usage.json()["flows"][0]["estimated_cost_brl"] == "0.002375"
+
+    budget = await client.put(
+        "/admin/mind/budgets/diagnosis_chat",
+        headers=auth_headers(admin_tokens),
+        json={"monthly_budget_brl": "7.50"},
+    )
+    assert budget.status_code == 200
+    assert budget.json()["monthly_budget_brl"] == "7.50"

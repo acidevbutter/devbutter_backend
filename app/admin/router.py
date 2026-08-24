@@ -23,6 +23,9 @@ from app.admin.schemas import (
     AdminDashboardRead,
     AdminInvoiceListItem,
     AdminInvoiceListRead,
+    AdminLLMBudgetRead,
+    AdminLLMBudgetUpdate,
+    AdminLLMUsageSummaryRead,
     AdminMindDashboardRead,
     AdminMindGovernanceRead,
     AdminMindGovernanceUpdate,
@@ -108,6 +111,33 @@ async def update_mind_settings(
 ) -> AdminMindGovernanceRead:
     return AdminMindGovernanceRead.model_validate(
         await service.update_governance(payload.model_dump())
+    )
+
+
+@router.get("/mind/usage", response_model=AdminLLMUsageSummaryRead)
+async def get_mind_usage(
+    _admin: CurrentAdminAccount, service: AdminMindServiceDep
+) -> AdminLLMUsageSummaryRead:
+    return AdminLLMUsageSummaryRead.model_validate(await service.llm_usage_summary())
+
+
+@router.get("/mind/budgets/{flow}", response_model=AdminLLMBudgetRead | None)
+async def get_mind_budget(
+    flow: str, _admin: CurrentAdminAccount, service: AdminMindServiceDep
+) -> AdminLLMBudgetRead | None:
+    budget = await service.llm_budget(flow)
+    return AdminLLMBudgetRead.model_validate(budget) if budget else None
+
+
+@router.put("/mind/budgets/{flow}", response_model=AdminLLMBudgetRead)
+async def update_mind_budget(
+    flow: str,
+    payload: AdminLLMBudgetUpdate,
+    _admin: CurrentAdminAccount,
+    service: AdminMindServiceDep,
+) -> AdminLLMBudgetRead:
+    return AdminLLMBudgetRead.model_validate(
+        await service.update_llm_budget(flow, payload.model_dump())
     )
 
 
