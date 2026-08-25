@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Implementado fluxo de métodos de pagamento: BFF opaco, contexto anti-replay de uso único, autorização por fatura/conta, token Asaas cifrado, revogação, idempotência e reconciliação de timeout.
+
 - Adicionada boundary server-side para descriptografar envelopes de pagamento apenas em memória, com keyring injetado, finalidade/contexto obrigatório e metadados seguros para logs.
 
 - Adicionada a base de envelope seguro AES-256-GCM v1 para payloads sensíveis, com validação e testes locais.

@@ -18,6 +18,7 @@ from app.invoices.router import account_router as account_invoices_router
 from app.invoices.router import router as invoices_router
 from app.knowledge.router import router as knowledge_router
 from app.orders.router import router as orders_router
+from app.payment_methods.router import router as payment_methods_router
 from app.quotes.router import router as quotes_router
 from app.service_catalog.router import router as service_catalog_router
 from app.settings.config import settings
@@ -52,6 +53,7 @@ app.include_router(accounts_router)
 app.include_router(conversations_router)
 app.include_router(quotes_router)
 app.include_router(orders_router)
+app.include_router(payment_methods_router)
 app.include_router(invoices_router)
 app.include_router(account_invoices_router)
 app.include_router(webhooks_router)

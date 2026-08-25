@@ -29,8 +29,10 @@ class _Recorder:
         self.responses = list(responses)
         self.calls: list[dict] = []
 
-    async def __call__(self, method, url, *, params=None, json=None):
-        self.calls.append({"method": method, "path": url, "params": params, "json": json})
+    async def __call__(self, method, url, *, params=None, json=None, timeout=None):
+        self.calls.append(
+            {"method": method, "path": url, "params": params, "json": json, "timeout": timeout}
+        )
         return self.responses.pop(0)
 
 
@@ -233,3 +235,15 @@ async def test_request_handles_empty_response_body(asaas_client, monkeypatch):
     result = await asaas_client.cancel_payment("acc_1", "pay_1")
 
     assert result == {}
+
+
+async def test_saved_card_payment_does_not_retry_a_502(asaas_client, monkeypatch):
+    recorder = _Recorder([_response(502, {})])
+    monkeypatch.setattr(asaas_client._client, "request", recorder)
+
+    with pytest.raises(UpstreamServiceError):
+        await asaas_client.pay_with_saved_payment_method("pay_1", "provider-secret")
+
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["path"] == "/internal/payment-methods/pay"
+    assert recorder.calls[0]["timeout"] == settings.asaas_card_request_timeout_seconds

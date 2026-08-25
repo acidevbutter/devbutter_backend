@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     asaas_client_key_path: str = "/app/certs/devbutter-platform.key"
     asaas_ca_cert_path: str = "/app/certs/ca.crt"
     asaas_request_timeout_seconds: float = 15.0
+    asaas_card_request_timeout_seconds: float = 70.0
+
+    # Payment-method flow. `payment_payload_keyring` is a comma-separated
+    # `kid:base64url-32-byte-key` keyring shared with the browser encryption
+    # configuration. The browser key is transport-only; it is never auth.
+    payment_payload_keyring: str = ""
+    payment_token_encryption_key: str = ""
+    payment_token_encryption_kid: str = "payment-token-v1"
+    payment_context_ttl_seconds: int = 300
 
     # -- core/clients/butter_mind_client.py: plain HTTP, same Docker network.
     butter_mind_base_url: str = "http://mind-api:8000"
@@ -65,6 +74,17 @@ class Settings(BaseSettings):
     # Asaas webhook receiver -- validates the `asaas-access-token` header.
     # See https://docs.asaas.com/docs/duvidas-frequentes-webhooks
     asaas_webhook_access_token: str = ""
+
+    @property
+    def payment_payload_keyring_dict(self) -> dict[str, str]:
+        pairs = [item.strip() for item in self.payment_payload_keyring.split(",") if item.strip()]
+        result: dict[str, str] = {}
+        for pair in pairs:
+            kid, separator, value = pair.partition(":")
+            if not separator or not kid or not value or kid in result:
+                raise ValueError("PAYMENT_PAYLOAD_KEYRING is invalid")
+            result[kid] = value
+        return result
 
 
 settings = Settings()

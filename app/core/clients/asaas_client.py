@@ -57,9 +57,37 @@ class AsaasClient:
     async def create_customer(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/customers", json_body=payload)
 
-    @log_call
     async def create_payment(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/payments", json_body=payload)
+
+    async def tokenize_payment_method(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Dedicated mTLS route; payload may contain card data, never log it."""
+        return await self._request(
+            "POST",
+            "/internal/payment-methods/tokenize",
+            json_body=payload,
+            retry_on_502=False,
+            timeout=settings.asaas_card_request_timeout_seconds,
+        )
+
+    async def pay_with_saved_payment_method(
+        self, asaas_payment_id: str, provider_token: str
+    ) -> dict[str, Any]:
+        """Dedicated mTLS route. The provider token is never logged or returned."""
+        return await self._request(
+            "POST",
+            "/internal/payment-methods/pay",
+            json_body={"paymentId": asaas_payment_id, "creditCardToken": provider_token},
+            retry_on_502=False,
+            timeout=settings.asaas_card_request_timeout_seconds,
+        )
+
+    async def retrieve_payment(self, asaas_payment_id: str) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            f"/internal/payment-methods/payments/{asaas_payment_id}",
+            timeout=settings.asaas_card_request_timeout_seconds,
+        )
 
     # -- Subaccounts --------------------------------------------------
 
@@ -81,9 +109,7 @@ class AsaasClient:
 
     @log_call
     async def resend_activation_link(self, account_id: str) -> dict[str, Any]:
-        return await self._request(
-            "POST", f"/subaccounts/{account_id}/resend-activation-link"
-        )
+        return await self._request("POST", f"/subaccounts/{account_id}/resend-activation-link")
 
     # -- Access tokens --------------------------------------------------
 
@@ -92,18 +118,14 @@ class AsaasClient:
         return await self._request("GET", f"/subaccounts/{account_id}/access-tokens")
 
     @log_call
-    async def create_access_token(
-        self, account_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_access_token(self, account_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request(
             "POST", f"/subaccounts/{account_id}/access-tokens", json_body=payload
         )
 
     @log_call
     async def revoke_access_token(self, account_id: str, token_id: str) -> dict[str, Any]:
-        return await self._request(
-            "DELETE", f"/subaccounts/{account_id}/access-tokens/{token_id}"
-        )
+        return await self._request("DELETE", f"/subaccounts/{account_id}/access-tokens/{token_id}")
 
     # -- Split rules --------------------------------------------------
 
@@ -136,9 +158,7 @@ class AsaasClient:
     async def list_payments(
         self, account_id: str, filters: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        return await self._request(
-            "GET", f"/subaccounts/{account_id}/payments", params=filters
-        )
+        return await self._request("GET", f"/subaccounts/{account_id}/payments", params=filters)
 
     @log_call
     async def get_payment(self, account_id: str, payment_id: str) -> dict[str, Any]:
@@ -179,25 +199,31 @@ class AsaasClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        retry_on_502: bool = True,
+        timeout: float | None = None,
     ) -> Any:
         attempt = 0
         while True:
             attempt += 1
             try:
-                response = await self._client.request(
-                    method, path, params=params, json=json_body
-                )
+                request_kwargs: dict[str, Any] = {"params": params, "json": json_body}
+                if timeout is not None:
+                    request_kwargs["timeout"] = timeout
+                response = await self._client.request(method, path, **request_kwargs)
             except httpx.HTTPError as exc:
                 raise UpstreamServiceError(f"asaas_payment request failed: {exc}") from exc
 
-            if response.status_code == _RETRYABLE_STATUS and attempt < _MAX_ATTEMPTS:
+            if (
+                retry_on_502
+                and response.status_code == _RETRYABLE_STATUS
+                and attempt < _MAX_ATTEMPTS
+            ):
                 await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
                 continue
 
             if response.status_code >= 400:
                 raise UpstreamServiceError(
-                    f"asaas_payment returned {response.status_code} for {method} {path}: "
-                    f"{response.text}"
+                    f"asaas_payment returned {response.status_code} for {method} {path}"
                 )
             if not response.content:
                 return {}

@@ -36,6 +36,7 @@ view and an integration adapter (see `docs/architecture/diagrams/backend-structu
 | `orders` | created on quote approval; drives Asaas Customer + Invoice creation |
 | `invoices` | local mirror of an Asaas cobrança, kept in sync via webhook |
 | `webhooks` | public receiver plus durable audit log for Asaas payment-status events (`asaas-access-token`, idempotent) |
+| `payment_methods` | one-time encrypted submission contexts, saved-card metadata and encrypted provider tokens |
 | `service_catalog` | metadata a client registers about their own business/store |
 | `knowledge` | admin-managed pricing/context entries used by the platform |
 | `admin` | Marcos's review queue and cross-account operational views — not its own entity |
@@ -50,6 +51,8 @@ view and an integration adapter (see `docs/architecture/diagrams/backend-structu
   because Layer A bills DevButter's own clients under DevButter's single Asaas account — it does not
   act through a white-label subaccount (Layer B, out of scope here; see the architecture doc §2).
   This service never sees `ASAAS_API_KEY`.
+  Card tokenization and saved-card payment use the separate mTLS-only
+  `/internal/payment-methods/*` boundary; its caller supplies only an opaque browser envelope.
 - **→ `butter_mind`** (`core/clients/butter_mind_client.py`): plain HTTP over the shared Docker
   network (`mind-api`), driving butter_mind's `/diagnosis/sessions` flow. butter_mind produces the
   schema-validated draft (`problem_summary`, `services_of_interest`, `budget_range`, `timeline`);
