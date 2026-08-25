@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Adicionada a base de envelope seguro AES-256-GCM v1 para payloads sensíveis, com validação e testes locais.
+
 - Expostos consumo e orçamento mensal de LLM no BFF administrativo da Mind.
 
 - Adicionada ponte administrativa autenticada para métricas e limites operacionais do
