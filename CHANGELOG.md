@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Adicionada boundary server-side para descriptografar envelopes de pagamento apenas em memória, com keyring injetado, finalidade/contexto obrigatório e metadados seguros para logs.
+
 - Adicionada a base de envelope seguro AES-256-GCM v1 para payloads sensíveis, com validação e testes locais.
 
 - Expostos consumo e orçamento mensal de LLM no BFF administrativo da Mind.
