@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Adicionadas validação e conclusão da recuperação de senha do portal, com
+  consumo atômico do token e invalidação de todas as sessões via
+  `users.session_version`, aplicada a REST, refresh e Socket.IO.
 - Adicionada a solicitação de recuperação de senha do portal: token aleatório
   armazenado somente como hash, validade de 45 minutos, invalidação de tokens
   anteriores e publicação no `butter_relay`, sem revelar contas inexistentes,

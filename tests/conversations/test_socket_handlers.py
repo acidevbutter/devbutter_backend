@@ -2,8 +2,10 @@ import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accounts.models import User
 from app.conversations import socket_handlers
 from app.conversations.repository import ConversationRepository
 from app.core.security import TokenType, decode_token
@@ -21,8 +23,7 @@ class _FakeButterMindClient:
 
 
 def _account_id(tokens: dict) -> uuid.UUID:
-    _, account_id = decode_token(tokens["access_token"], TokenType.ACCESS)
-    return account_id
+    return decode_token(tokens["access_token"], TokenType.ACCESS).account_id
 
 
 def _cookie_environ(access_token: str | None) -> dict:
@@ -146,3 +147,24 @@ async def test_visitor_without_cookie_can_join_unclaimed_conversation(
 
     assert ack == {"ok": True}
     enter_room_mock.assert_awaited_once_with(sid, f"conversation:{conversation.id}")
+
+
+async def test_join_rejects_a_socket_after_its_session_is_revoked(client, db_session, monkeypatch):
+    tokens = await signup(client, email="revoked-socket@example.com")
+    account_id = _account_id(tokens)
+    conversation = await ConversationRepository(db_session).create(
+        account_id, "mind-session-revoked"
+    )
+
+    _patch_shared_session(monkeypatch, db_session)
+    sid = "sid-revoked"
+    await socket_handlers.connect(sid, _cookie_environ(tokens["access_token"]))
+
+    user = (
+        await db_session.execute(select(User).where(User.email == "revoked-socket@example.com"))
+    ).scalar_one()
+    user.session_version += 1
+    await db_session.commit()
+
+    ack = await socket_handlers.join_conversation(sid, {"conversation_id": str(conversation.id)})
+    assert ack == {"ok": False, "detail": "Authentication expired"}

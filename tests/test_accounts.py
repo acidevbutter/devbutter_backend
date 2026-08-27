@@ -1,4 +1,6 @@
+import asyncio
 import hashlib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -173,6 +175,143 @@ async def test_password_recovery_invalidates_previous_token(
         assert tokens_by_hash[hashlib.sha256(second_token.encode()).hexdigest()].used_at is None
         assert (await client.get(f"/accounts/password-setup/{first_token}")).status_code == 404
         assert (await client.get(f"/accounts/password-setup/{second_token}")).status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
+
+
+async def test_password_recovery_check_and_completion_revoke_existing_sessions(
+    client: AsyncClient,
+):
+    fake_relay = _mock_relay()
+    try:
+        old_tokens = await signup(client, email="recover@example.com")
+        request = await client.post(
+            "/accounts/password-recovery", json={"email": "recover@example.com"}
+        )
+        assert request.status_code == 202
+        raw_token = fake_relay.sent[0][2]["password_recovery_url"].rsplit("/", 1)[-1]
+
+        check = await client.get(f"/accounts/password-recovery/{raw_token}")
+        assert check.status_code == 200
+        assert check.json() == {"valid": True}
+
+        complete = await client.post(
+            "/accounts/password-recovery/complete",
+            json={"token": raw_token, "password": "nova-senha-123"},
+        )
+        assert complete.status_code == 200, complete.text
+        new_tokens = complete.json()
+        assert new_tokens["access_token"]
+        assert new_tokens["refresh_token"]
+
+        assert (
+            await client.get("/accounts/me", headers=auth_headers(old_tokens))
+        ).status_code == 401
+        assert (
+            await client.post(
+                "/accounts/refresh", json={"refresh_token": old_tokens["refresh_token"]}
+            )
+        ).status_code == 401
+        assert (
+            await client.get("/accounts/me", headers=auth_headers(new_tokens))
+        ).status_code == 200
+
+        used = await client.get(f"/accounts/password-recovery/{raw_token}")
+        assert used.status_code == 404
+        assert used.json() == {"detail": "Link inválido, expirado ou já utilizado"}
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
+
+
+async def test_password_recovery_rejects_invalid_expired_inactive_and_accountless_tokens(
+    client: AsyncClient, db_session: AsyncSession
+):
+    fake_relay = _mock_relay()
+    try:
+        await signup(client, email="expire@example.com")
+        await client.post("/accounts/password-recovery", json={"email": "expire@example.com"})
+        expiring_token = fake_relay.sent[0][2]["password_recovery_url"].rsplit("/", 1)[-1]
+
+        invalid_password = await client.post(
+            "/accounts/password-recovery/complete",
+            json={"token": expiring_token, "password": "short"},
+        )
+        assert invalid_password.status_code == 422
+        assert (
+            await client.get(f"/accounts/password-recovery/{expiring_token}")
+        ).status_code == 200
+
+        recovery_token = (
+            await db_session.execute(select(PasswordRecoveryToken))
+        ).scalar_one()
+        recovery_token.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await db_session.commit()
+        expired = await client.post(
+            "/accounts/password-recovery/complete",
+            json={"token": expiring_token, "password": "nova-senha-123"},
+        )
+        assert expired.status_code == 404
+        assert expired.json() == {"detail": "Link inválido, expirado ou já utilizado"}
+
+        await signup(client, email="inactive-recovery@example.com")
+        await signup(client, email="accountless-recovery@example.com")
+        users = {
+            user.email: user
+            for user in (
+                await db_session.execute(
+                    select(User).where(
+                        User.email.in_(
+                            ["inactive-recovery@example.com", "accountless-recovery@example.com"]
+                        )
+                    )
+                )
+            ).scalars()
+        }
+        users["inactive-recovery@example.com"].is_active = False
+        accountless_user = users["accountless-recovery@example.com"]
+        accounts = await AccountRepository(db_session).list_for_user(accountless_user.id)
+        await db_session.delete(accounts[0])
+        await db_session.commit()
+
+        repository = AccountRepository(db_session)
+        inactive_token, _ = await repository.create_password_recovery_token(
+            users["inactive-recovery@example.com"].id
+        )
+        accountless_token, _ = await repository.create_password_recovery_token(accountless_user.id)
+        for raw_token in (inactive_token, accountless_token, "not-a-token"):
+            response = await client.post(
+                "/accounts/password-recovery/complete",
+                json={"token": raw_token, "password": "nova-senha-123"},
+            )
+            assert response.status_code == 404
+            assert response.json() == {"detail": "Link inválido, expirado ou já utilizado"}
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
+
+
+async def test_password_recovery_completion_has_exactly_one_concurrent_winner(client: AsyncClient):
+    fake_relay = _mock_relay()
+    try:
+        await signup(client, email="concurrent-recovery@example.com")
+        await client.post(
+            "/accounts/password-recovery", json={"email": "concurrent-recovery@example.com"}
+        )
+        raw_token = fake_relay.sent[0][2]["password_recovery_url"].rsplit("/", 1)[-1]
+
+        responses = await asyncio.gather(
+            client.post(
+                "/accounts/password-recovery/complete",
+                json={"token": raw_token, "password": "nova-senha-123"},
+            ),
+            client.post(
+                "/accounts/password-recovery/complete",
+                json={"token": raw_token, "password": "nova-senha-456"},
+            ),
+        )
+
+        assert sorted(response.status_code for response in responses) == [200, 404]
+        loser = next(response for response in responses if response.status_code == 404)
+        assert loser.json() == {"detail": "Link inválido, expirado ou já utilizado"}
     finally:
         app.dependency_overrides.pop(get_relay_client, None)
 

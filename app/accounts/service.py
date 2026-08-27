@@ -10,6 +10,7 @@ from app.accounts.schemas import (
     AccountSignup,
     AccountUpdate,
     CompanyCreate,
+    PasswordRecoveryCheck,
     TokenPair,
 )
 from app.core.decorators import log_errors
@@ -31,6 +32,7 @@ from app.core.security import (
 from app.notifications.service import NotificationService
 
 logger = logging.getLogger(__name__)
+_PASSWORD_RECOVERY_INVALID_DETAIL = "Link inválido, expirado ou já utilizado"
 
 
 @dataclass
@@ -63,7 +65,7 @@ class AccountService:
         user, company, account = await self.repository.create(
             payload, hash_password(payload.password)
         )
-        return user, company, account, self._issue_tokens(user.id, account.id)
+        return user, company, account, self._issue_tokens(user, account.id)
 
     async def login(self, email: str, password: str) -> tuple[User, Account, TokenPair]:
         user = await self.repository.get_user_by_email(email)
@@ -74,7 +76,7 @@ class AccountService:
         accounts = await self.repository.list_for_user(user.id)
         if not accounts:
             raise UnauthorizedError("User has no active account")
-        return user, accounts[0], self._issue_tokens(user.id, accounts[0].id)
+        return user, accounts[0], self._issue_tokens(user, accounts[0].id)
 
     async def get_or_create_from_extraction(
         self, extraction: dict[str, Any], password: str | None = None
@@ -119,7 +121,7 @@ class AccountService:
             user=user,
             company=company,
             account=account,
-            tokens=self._issue_tokens(user.id, account.id),
+            tokens=self._issue_tokens(user, account.id),
             created=True,
         )
 
@@ -148,7 +150,7 @@ class AccountService:
             raise ConflictError(f"User {user.id} has no account")
         await self.repository.set_password(user, hash_password(password))
         await self.repository.mark_password_setup_token_used(token)
-        return self._issue_tokens(user.id, accounts[0].id)
+        return self._issue_tokens(user, accounts[0].id)
 
     async def request_password_recovery(self, email: str) -> None:
         user = await self.repository.get_user_by_normalized_email(email)
@@ -172,16 +174,43 @@ class AccountService:
             # invalidates it, so the user can retry without revealing state.
             logger.exception("Password recovery notification could not be queued")
 
+    async def check_password_recovery(self, raw_token: str) -> PasswordRecoveryCheck:
+        token = await self.repository.get_valid_password_recovery_token(raw_token)
+        if token is None:
+            raise NotFoundError(_PASSWORD_RECOVERY_INVALID_DETAIL)
+        user = await self.repository.get_user(token.user_id)
+        if user is None or not user.is_active or user.is_admin:
+            raise NotFoundError(_PASSWORD_RECOVERY_INVALID_DETAIL)
+        if not await self.repository.list_for_user(user.id):
+            raise NotFoundError(_PASSWORD_RECOVERY_INVALID_DETAIL)
+        return PasswordRecoveryCheck()
+
+    async def complete_password_recovery(self, raw_token: str, password: str) -> TokenPair:
+        if len(password) < 8:
+            raise ValidationFailedError("Password must have at least 8 characters")
+        completed = await self.repository.consume_password_recovery_token(
+            raw_token, hash_password(password)
+        )
+        if completed is None:
+            raise NotFoundError(_PASSWORD_RECOVERY_INVALID_DETAIL)
+        user, account = completed
+        return self._issue_tokens(user, account.id)
+
     async def refresh(self, refresh_token: str) -> TokenPair:
         try:
-            user_id, account_id = decode_token(refresh_token, TokenType.REFRESH)
+            claims = decode_token(refresh_token, TokenType.REFRESH)
         except InvalidTokenError as exc:
             raise UnauthorizedError(str(exc)) from exc
-        user = await self.repository.get_user(user_id)
-        account = await self.repository.get_for_user(account_id, user_id)
-        if user is None or not user.is_active or account is None:
+        user = await self.repository.get_user(claims.user_id)
+        account = await self.repository.get_for_user(claims.account_id, claims.user_id)
+        if (
+            user is None
+            or not user.is_active
+            or user.session_version != claims.session_version
+            or account is None
+        ):
             raise UnauthorizedError("User or selected account is no longer active")
-        return self._issue_tokens(user.id, account.id)
+        return self._issue_tokens(user, account.id)
 
     async def get(self, account_id: uuid.UUID) -> Account | None:
         return await self.repository.get(account_id)
@@ -218,15 +247,15 @@ class AccountService:
         account = await self.repository.get_for_user(account_id, user.id)
         if account is None:
             raise UnauthorizedError("Account is not available to this user")
-        return self._issue_tokens(user.id, account.id)
+        return self._issue_tokens(user, account.id)
 
     async def update(
         self, user: User, company: Company, account: Account, payload: AccountUpdate
     ) -> Account:
         return await self.repository.update(user, company, account, payload)
 
-    def _issue_tokens(self, user_id: uuid.UUID, account_id: uuid.UUID) -> TokenPair:
+    def _issue_tokens(self, user: User, account_id: uuid.UUID) -> TokenPair:
         return TokenPair(
-            access_token=create_access_token(user_id, account_id),
-            refresh_token=create_refresh_token(user_id, account_id),
+            access_token=create_access_token(user.id, account_id, user.session_version),
+            refresh_token=create_refresh_token(user.id, account_id, user.session_version),
         )

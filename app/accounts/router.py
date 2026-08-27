@@ -16,6 +16,8 @@ from app.accounts.schemas import (
     CompanyCreate,
     CompanyRead,
     LoginRequest,
+    PasswordRecoveryCheck,
+    PasswordRecoveryComplete,
     PasswordRecoveryRequest,
     PasswordRecoveryRequestAccepted,
     PasswordSetupCheck,
@@ -65,13 +67,19 @@ async def get_authenticated_context(
     if credentials is None:
         raise UnauthorizedError("Missing bearer token")
     try:
-        user_id, account_id = decode_token(credentials.credentials, TokenType.ACCESS)
+        claims = decode_token(credentials.credentials, TokenType.ACCESS)
     except InvalidTokenError as exc:
         raise UnauthorizedError(str(exc)) from exc
-    user = await service.get_user(user_id)
-    account = await service.get_account_for_user(account_id, user_id)
+    user = await service.get_user(claims.user_id)
+    account = await service.get_account_for_user(claims.account_id, claims.user_id)
     company = await service.get_company(account.company_id) if account else None
-    if user is None or not user.is_active or account is None or company is None:
+    if (
+        user is None
+        or not user.is_active
+        or user.session_version != claims.session_version
+        or account is None
+        or company is None
+    ):
         raise UnauthorizedError("User or selected account is no longer active")
     return AuthenticatedContext(user, company, account)
 
@@ -190,6 +198,29 @@ async def request_password_recovery(
 ) -> PasswordRecoveryRequestAccepted:
     await service.request_password_recovery(str(payload.email))
     return PasswordRecoveryRequestAccepted()
+
+
+@router.get(
+    "/password-recovery/{token}",
+    response_model=PasswordRecoveryCheck,
+    summary="Check a password-recovery link before rendering the form",
+)
+async def check_password_recovery(
+    token: str, service: AccountServiceDep
+) -> PasswordRecoveryCheck:
+    return await service.check_password_recovery(token)
+
+
+@router.post(
+    "/password-recovery/complete",
+    response_model=TokenPair,
+    status_code=status.HTTP_200_OK,
+    summary="Replace a password from a recovery link and log in",
+)
+async def complete_password_recovery(
+    payload: PasswordRecoveryComplete, service: AccountServiceDep
+) -> TokenPair:
+    return await service.complete_password_recovery(payload.token, payload.password)
 
 
 def _account_selection(account: Account, company: Company) -> AccountSelectionRead:

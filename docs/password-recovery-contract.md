@@ -28,7 +28,7 @@ expiração, senha e autorização; o Relay apenas entrega o e-mail.
 |---|---|---|---|
 | `POST /accounts/password-recovery` | `{ "email": "cliente@example.com" }` | `202 { "message": "Se o e-mail estiver cadastrado, enviaremos instruções." }` | Mesmo `202` e corpo para e-mail inexistente, inativo ou admin |
 | `GET /accounts/password-recovery/{token}` | token no caminho | `200 { "valid": true }` | `404 { "detail": "Link inválido, expirado ou já utilizado" }` |
-| `POST /accounts/password-recovery/complete` | `{ "token": "...", "password": "..." }` | `200 TokenPair` | Erro genérico de token; `400` para senha com menos de oito caracteres |
+| `POST /accounts/password-recovery/complete` | `{ "token": "...", "password": "..." }` | `200 TokenPair` | Erro genérico de token; `422` para senha com menos de oito caracteres |
 
 `TokenPair` só trafega entre backend e BFF. O backend não retorna e-mail ou
 outro dado do usuário ao validar o link.
@@ -90,3 +90,16 @@ Os testes cobrem e-mail existente/inexistente, usuário inativo/admin, ausência
 do token bruto na persistência, publicação apenas do caso válido e invalidação
 na repetição. Rate limit por IP/e-mail, registro do template no Relay, BFF,
 validação/conclusão e revogação de sessões continuam fora desta slice.
+
+## Status da Slice 2
+
+`GET /accounts/password-recovery/{token}` retorna somente `valid`; a conclusão
+valida senha mínima, atualiza a senha e consome o token por atualização
+condicional na mesma transação. Token inexistente, expirado, usado, de usuário
+inativo/admin ou sem conta retorna a mesma resposta `404` genérica.
+
+`users.session_version` é carregado nos JWTs e conferido em REST, refresh e
+Socket.IO. A troca de senha incrementa a versão e invalida todas as sessões
+emitidas anteriormente. Testes locais cobrem sucesso, expiração, reuso,
+concorrência com uma vencedora, senha inválida, usuário inativo/sem conta e
+revogação de access token, refresh token e socket já conectado.

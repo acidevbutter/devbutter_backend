@@ -259,6 +259,63 @@ class AccountRepository:
         await self.session.refresh(token)
         return raw_token, token
 
+    async def get_valid_password_recovery_token(
+        self, raw_token: str
+    ) -> PasswordRecoveryToken | None:
+        result = await self.session.execute(
+            select(PasswordRecoveryToken).where(
+                PasswordRecoveryToken.token_hash == _hash_token(raw_token)
+            )
+        )
+        token = result.scalar_one_or_none()
+        if token is None or token.used_at is not None:
+            return None
+        expires_at = token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at < datetime.now(UTC):
+            return None
+        return token
+
+    async def consume_password_recovery_token(
+        self, raw_token: str, password_hash: str
+    ) -> tuple[User, Account] | None:
+        now = datetime.now(UTC)
+        try:
+            async with self.session.begin():
+                result = await self.session.execute(
+                    update(PasswordRecoveryToken)
+                    .where(
+                        PasswordRecoveryToken.token_hash == _hash_token(raw_token),
+                        PasswordRecoveryToken.used_at.is_(None),
+                        PasswordRecoveryToken.expires_at > now,
+                    )
+                    .values(used_at=now)
+                    .returning(PasswordRecoveryToken.user_id)
+                )
+                user_id = result.scalar_one_or_none()
+                if user_id is None:
+                    return None
+                user = await self.session.get(User, user_id)
+                if user is None or not user.is_active or user.is_admin:
+                    return None
+                account_result = await self.session.execute(
+                    select(Account)
+                    .join(Company, Company.id == Account.company_id)
+                    .where(Company.user_id == user.id)
+                    .order_by(Account.created_at.asc())
+                )
+                account = account_result.scalars().first()
+                if account is None:
+                    return None
+                user.password_hash = password_hash
+                user.auth_method = "password"
+                user.session_version += 1
+            return user, account
+        except SQLAlchemyError:
+            await self.session.rollback()
+            raise
+
     async def set_password(self, user: User, password_hash: str) -> None:
         user.password_hash = password_hash
         user.auth_method = "password"

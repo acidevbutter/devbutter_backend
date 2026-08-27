@@ -105,3 +105,12 @@ class PasswordRecoveryRequest(BaseModel):
 
 class PasswordRecoveryRequestAccepted(BaseModel):
     message: str = "Se o e-mail estiver cadastrado, enviaremos instruções."
+
+
+class PasswordRecoveryCheck(BaseModel):
+    valid: bool = True
+
+
+class PasswordRecoveryComplete(BaseModel):
+    token: str
+    password: str
