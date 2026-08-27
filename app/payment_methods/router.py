@@ -1,8 +1,8 @@
 import base64
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Body, Depends, Request, status
 
 from app.accounts.repository import AccountRepository
 from app.accounts.router import CurrentAccount, CurrentAdminAccount, CurrentCompany
@@ -13,11 +13,13 @@ from app.orders.repository import OrderRepository
 from app.payment_methods.repository import PaymentMethodRepository
 from app.payment_methods.schemas import (
     PaymentCreate,
-    PaymentMethodCreate,
+    PaymentMethodCreateResponse,
     PaymentMethodRead,
     PaymentMethodSessionCreate,
     PaymentMethodSessionRead,
+    PaymentMethodSummary,
     PaymentRead,
+    PaymentSummary,
 )
 from app.payment_methods.service import PaymentMethodService
 
@@ -52,35 +54,44 @@ async def create_payment_method_session(
     context = await service.create_context(
         account_id=account.id,
         company_id=company.id,
+        purpose=payload.purpose,
+        supported_kids=payload.supported_kids,
         invoice_id=payload.invoice_id,
-        operation=payload.operation,
     )
     return PaymentMethodSessionRead(
         context_id=context.context_id,
+        kid=context.kid,
         nonce=base64.urlsafe_b64encode(context.nonce).decode().rstrip("="),
-        expires_at=context.expires_at,
+        expires_at=int(context.expires_at.timestamp()),
+        purpose=context.purpose,
     )
 
 
 @router.post(
     "/payment-methods",
-    response_model=PaymentMethodRead,
+    response_model=PaymentMethodCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_payment_method(
-    payload: PaymentMethodCreate,
+    request: Request,
     account: CurrentAccount,
     company: CurrentCompany,
     service: PaymentMethodServiceDep,
-) -> PaymentMethodRead:
-    return PaymentMethodRead.model_validate(
-        await service.create_from_envelope(
-            account_id=account.id,
-            company_id=company.id,
-            invoice_id=payload.invoice_id,
-            operation=payload.operation,
-            envelope=payload.envelope,
-        )
+    envelope: Annotated[dict[str, Any], Body()],
+) -> PaymentMethodCreateResponse:
+    # Contract-07 section 5.1: the request body IS the v1 envelope, no
+    # wrapper fields (invoiceId/purpose are already bound server-side to the
+    # ledger row located by the envelope's own contextId).
+    remote_ip = request.client.host if request.client else "0.0.0.0"
+    method, payment = await service.create_from_envelope(
+        account_id=account.id,
+        company_id=company.id,
+        envelope=envelope,
+        remote_ip=remote_ip,
+    )
+    return PaymentMethodCreateResponse(
+        payment_method=PaymentMethodSummary.model_validate(method),
+        payment=PaymentSummary.model_validate(payment) if payment is not None else None,
     )
 
 

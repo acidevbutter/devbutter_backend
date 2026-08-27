@@ -9,7 +9,18 @@ from app.core.secure_payload import SecurePayloadError, decrypt_payload
 
 @dataclass(frozen=True, slots=True)
 class SecurePaymentContext:
-    """Server-derived request context; never accept these values from trust alone."""
+    """Server-derived request context; never accept these values from trust alone.
+
+    `tenant_id`, `subject_id`, `invoice_id`, `amount_minor` and `currency`
+    (contract-freeze section 2.2) are ownership/authorization facts read
+    from the anti-replay ledger row -- resolved exclusively from server-side
+    state (session + database), never from the envelope's plaintext or from
+    any client-supplied field. They are not part of the AEAD's Additional
+    Authenticated Data (that stays exactly the 8 fields fixed by the crypto
+    contract) and `decrypt_for_processing` below does not read them; they
+    exist so the caller has one place to carry ownership context alongside
+    the crypto context through the request lifecycle.
+    """
 
     context_id: str
     nonce: bytes
@@ -17,6 +28,11 @@ class SecurePaymentContext:
     method: str
     path: str
     now: int
+    tenant_id: str
+    subject_id: str
+    invoice_id: str | None
+    amount_minor: int | None
+    currency: str | None
 
 
 class SecurePaymentPayloadService:

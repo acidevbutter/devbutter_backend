@@ -14,6 +14,11 @@ def _context(nonce: bytes) -> SecurePaymentContext:
         method="POST",
         path="/payment-methods",
         now=1_700_000_000,
+        tenant_id="company-1",
+        subject_id="account-1",
+        invoice_id=None,
+        amount_minor=None,
+        currency=None,
     )
 
 

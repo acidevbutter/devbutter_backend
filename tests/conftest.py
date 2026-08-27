@@ -1,6 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db_session
@@ -11,7 +12,21 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest.fixture
 async def db_session():
-    engine = create_async_engine(TEST_DATABASE_URL)
+    # StaticPool + check_same_thread=False: a real single shared in-memory
+    # SQLite connection, so multiple *independent* AsyncSession objects
+    # (one per HTTP request, matching production's one-session-per-request
+    # via app.db.session.get_db_session) all see the same database --
+    # required for tests that fire genuinely concurrent requests
+    # (test_payment_method_router.py's asyncio.gather cases). A single
+    # shared AsyncSession instance driven from two coroutines concurrently
+    # is not safe (SQLAlchemy sessions aren't concurrency-safe), so the
+    # `client` fixture below opens a fresh session per request instead of
+    # reusing this one across concurrent calls.
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -24,8 +39,11 @@ async def db_session():
 
 @pytest.fixture
 async def client(db_session: AsyncSession):
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+
     async def _override_get_db_session():
-        yield db_session
+        async with session_factory() as session:
+            yield session
 
     app.dependency_overrides[get_db_session] = _override_get_db_session
     transport = ASGITransport(app=app)

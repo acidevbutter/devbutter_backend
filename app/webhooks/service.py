@@ -6,6 +6,7 @@ from app.core.exceptions import NotFoundError
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
+from app.payment_methods.repository import PaymentMethodRepository
 from app.webhooks.models import WebhookEvent
 from app.webhooks.repository import WebhookEventRepository
 from app.webhooks.schemas import AsaasWebhookEvent
@@ -37,12 +38,14 @@ class WebhookService:
         account_repository: AccountRepository,
         notification_service: NotificationService,
         event_repository: WebhookEventRepository,
+        payment_method_repository: PaymentMethodRepository | None = None,
     ):
         self.invoice_repository = invoice_repository
         self.order_repository = order_repository
         self.account_repository = account_repository
         self.notification_service = notification_service
         self.event_repository = event_repository
+        self.payment_method_repository = payment_method_repository
 
     async def process_event(
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
@@ -82,6 +85,7 @@ class WebhookService:
 
         new_status = _STATUS_MAP.get(event.payment.status, event.payment.status)
         invoice, changed = await self.invoice_repository.update_status(invoice, new_status)
+        await self._reconcile_payment_attempts(invoice.id, new_status)
         if not changed:
             return
 
@@ -98,3 +102,20 @@ class WebhookService:
         if user is None:
             return
         self.notification_service.notify_payment_status_changed(user, invoice)
+
+    async def _reconcile_payment_attempts(self, invoice_id: Any, new_status: str) -> None:
+        """Real fix for Phase-3 item 6 (webhook wiring): a saved-card
+        `PaymentAttempt` (payment_methods/service.py `pay()`) is created
+        `processing`/`submitted`/`unknown` from Asaas's *synchronous*
+        `payWithCreditCard` response -- this webhook is the async source of
+        truth that eventually confirms it. Only advances attempts still
+        `processing`/`submitted`/`unknown` to `succeeded` on a PAID mapping;
+        idempotent (re-delivery just re-sets the same state) and never
+        regresses an attempt already `succeeded`.
+        """
+
+        if self.payment_method_repository is None or new_status != "PAID":
+            return
+        for attempt in await self.payment_method_repository.list_attempts_by_invoice(invoice_id):
+            if attempt.state in {"processing", "submitted", "unknown"}:
+                await self.payment_method_repository.set_attempt_state(attempt, "succeeded")

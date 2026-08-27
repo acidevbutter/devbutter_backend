@@ -11,6 +11,7 @@ from app.core.exceptions import NotFoundError, UnauthorizedError
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
+from app.payment_methods.repository import PaymentMethodRepository
 from app.settings.config import settings
 from app.webhooks.repository import WebhookEventRepository
 from app.webhooks.schemas import AdminWebhookEventListRead, AdminWebhookEventRead, AsaasWebhookEvent
@@ -31,6 +32,7 @@ def get_webhook_service(
         AccountRepository(db),
         notification_service,
         WebhookEventRepository(db),
+        PaymentMethodRepository(db),
     )
 
 
