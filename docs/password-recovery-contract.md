@@ -71,9 +71,22 @@ encaminham somente os campos do contrato.
   2 deverá introduzir e verificar uma estratégia de revogação/versionamento;
   trocar somente `password_hash` não invalida tokens já emitidos.
 
-## Evidência e limites desta slice
+## Evidência e limites da Slice 0
 
 Este documento foi confrontado com o fluxo atual de `password-setup`, o BFF do
 portal, `NotificationService` e `RelayClient`. Nenhum endpoint, migration,
 template de Relay, rate limiter ou mecanismo de revogação foi implementado ou
 validado nesta slice.
+
+## Status da Slice 1
+
+`POST /accounts/password-recovery` foi implementado com `202` uniforme,
+normalização de e-mail, token CSPRNG armazenado somente como hash, TTL de 45
+minutos, invalidação dos tokens válidos anteriores e publicação pelo
+`RelayClient`. A tabela é separada de `password_setup_tokens`, portanto esses
+tokens não são aceitos pelo fluxo de onboarding.
+
+Os testes cobrem e-mail existente/inexistente, usuário inativo/admin, ausência
+do token bruto na persistência, publicação apenas do caso válido e invalidação
+na repetição. Rate limit por IP/e-mail, registro do template no Relay, BFF,
+validação/conclusão e revogação de sessões continuam fora desta slice.

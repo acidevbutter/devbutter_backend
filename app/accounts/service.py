@@ -1,3 +1,4 @@
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +28,9 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.notifications.service import NotificationService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,8 +53,11 @@ class AccountLinkResult:
 
 @log_errors
 class AccountService:
-    def __init__(self, repository: AccountRepository):
+    def __init__(
+        self, repository: AccountRepository, notification_service: NotificationService | None = None
+    ):
         self.repository = repository
+        self.notification_service = notification_service
 
     async def signup(self, payload: AccountSignup) -> tuple[User, Company, Account, TokenPair]:
         user, company, account = await self.repository.create(
@@ -142,6 +149,28 @@ class AccountService:
         await self.repository.set_password(user, hash_password(password))
         await self.repository.mark_password_setup_token_used(token)
         return self._issue_tokens(user.id, accounts[0].id)
+
+    async def request_password_recovery(self, email: str) -> None:
+        user = await self.repository.get_user_by_normalized_email(email)
+        if (
+            user is None
+            or not user.is_active
+            or user.is_admin
+            or user.password_hash is None
+            or self.notification_service is None
+        ):
+            return
+        if not await self.repository.list_for_user(user.id):
+            return
+
+        raw_token, token = await self.repository.create_password_recovery_token(user.id)
+        try:
+            self.notification_service.notify_password_recovery(user, raw_token, token.expires_at)
+        except Exception:
+            # Delivery problems must not turn this public endpoint into an
+            # account-existence oracle. The token is one-time and a new request
+            # invalidates it, so the user can retry without revealing state.
+            logger.exception("Password recovery notification could not be queued")
 
     async def refresh(self, refresh_token: str) -> TokenPair:
         try:

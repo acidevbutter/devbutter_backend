@@ -16,15 +16,19 @@ from app.accounts.schemas import (
     CompanyCreate,
     CompanyRead,
     LoginRequest,
+    PasswordRecoveryRequest,
+    PasswordRecoveryRequestAccepted,
     PasswordSetupCheck,
     PasswordSetupComplete,
     RefreshRequest,
     TokenPair,
 )
 from app.accounts.service import AccountService
+from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import InvalidTokenError, TokenType, decode_token
+from app.notifications.service import NotificationService
 
 
 def get_account_service(db: DbSession) -> AccountService:
@@ -32,6 +36,17 @@ def get_account_service(db: DbSession) -> AccountService:
 
 
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
+
+
+def get_password_recovery_service(
+    db: DbSession, relay_client: Annotated[RelayClient, Depends(get_relay_client)]
+) -> AccountService:
+    return AccountService(AccountRepository(db), NotificationService(relay_client))
+
+
+PasswordRecoveryServiceDep = Annotated[
+    AccountService, Depends(get_password_recovery_service)
+]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -162,6 +177,19 @@ async def complete_password_setup(
     payload: PasswordSetupComplete, service: AccountServiceDep
 ) -> TokenPair:
     return await service.complete_password_setup(payload.token, payload.password)
+
+
+@router.post(
+    "/password-recovery",
+    response_model=PasswordRecoveryRequestAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Request a portal password-recovery link",
+)
+async def request_password_recovery(
+    payload: PasswordRecoveryRequest, service: PasswordRecoveryServiceDep
+) -> PasswordRecoveryRequestAccepted:
+    await service.request_password_recovery(str(payload.email))
+    return PasswordRecoveryRequestAccepted()
 
 
 def _account_selection(account: Account, company: Company) -> AccountSelectionRead:

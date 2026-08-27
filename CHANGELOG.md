@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Adicionada a solicitação de recuperação de senha do portal: token aleatório
+  armazenado somente como hash, validade de 45 minutos, invalidação de tokens
+  anteriores e publicação no `butter_relay`, sem revelar contas inexistentes,
+  inativas ou administrativas.
 - Corrigidos os achados N-04/N-05 da validação adversarial (fatia 11):
   `PaymentCreate` (`POST /payments`) agora aceita adicionalmente `camelCase`
   (`invoiceId`/`paymentMethodId`/`idempotencyKey`) além do `snake_case` que

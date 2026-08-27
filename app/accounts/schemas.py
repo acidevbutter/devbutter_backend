@@ -97,3 +97,11 @@ class PasswordSetupCheck(BaseModel):
 class PasswordSetupComplete(BaseModel):
     token: str
     password: str
+
+
+class PasswordRecoveryRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordRecoveryRequestAccepted(BaseModel):
+    message: str = "Se o e-mail estiver cadastrado, enviaremos instruções."

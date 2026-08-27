@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from app.accounts.models import User
@@ -13,6 +14,7 @@ _TEMPLATE_QUOTE_APPROVED = "devbutter_quote_approved"
 _TEMPLATE_PAYMENT_STATUS_CHANGED = "devbutter_payment_status_changed"
 _TEMPLATE_PENDING_ACCOUNT_LINK = "devbutter_pending_account_link"
 _TEMPLATE_QUOTE_RECEIVED = "devbutter_quote_received"
+_TEMPLATE_PASSWORD_RECOVERY = "devbutter_password_recovery"
 
 
 @log_errors
@@ -78,6 +80,21 @@ class NotificationService:
                 "status_label": "aguardando revisão",
                 "password_setup_url": password_setup_url,
                 "portal_url": f"{settings.frontend_base_url}/portal",
+            },
+        )
+
+    def notify_password_recovery(
+        self, user: User, token: str, expires_at: datetime
+    ) -> None:
+        self.relay_client.send(
+            _TEMPLATE_PASSWORD_RECOVERY,
+            user.email,
+            {
+                "name": user.name,
+                "password_recovery_url": (
+                    f"{settings.frontend_base_url}/portal/recuperar-senha/{token}"
+                ),
+                "expires_at": expires_at.isoformat(),
             },
         )
 

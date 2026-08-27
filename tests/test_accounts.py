@@ -1,10 +1,16 @@
+import hashlib
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accounts.models import PasswordRecoveryToken, User
 from app.accounts.repository import AccountRepository
 from app.accounts.service import AccountService
+from app.core.clients.relay_client import get_relay_client
 from app.core.exceptions import UnauthorizedError
+from app.main import app
 from tests.conftest import auth_headers, signup
 
 
@@ -22,6 +28,20 @@ def _extraction(**overrides) -> dict:
     }
     payload.update(overrides)
     return payload
+
+
+class _FakeRelayClient:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str, dict]] = []
+
+    def send(self, template_key: str, to: str, payload: dict) -> None:
+        self.sent.append((template_key, to, payload))
+
+
+def _mock_relay() -> _FakeRelayClient:
+    fake = _FakeRelayClient()
+    app.dependency_overrides[get_relay_client] = lambda: fake
+    return fake
 
 
 async def test_signup_returns_token_pair(client: AsyncClient):
@@ -74,6 +94,87 @@ async def test_refresh_issues_new_token_pair(client: AsyncClient):
     )
     assert response.status_code == 200
     assert response.json()["access_token"] != tokens["access_token"]
+
+
+async def test_password_recovery_is_generic_and_only_valid_user_is_queued(
+    client: AsyncClient, db_session: AsyncSession
+):
+    fake_relay = _mock_relay()
+    try:
+        await signup(client, email="cliente@example.com")
+        await signup(client, email="inativo@example.com")
+        await signup(client, email="admin@example.com")
+        users = list(
+            (
+                await db_session.execute(
+                    select(User).where(User.email.in_(["inativo@example.com", "admin@example.com"]))
+                )
+            ).scalars()
+        )
+        for user in users:
+            if user.email == "inativo@example.com":
+                user.is_active = False
+            else:
+                user.is_admin = True
+        await db_session.commit()
+
+        responses = [
+            await client.post("/accounts/password-recovery", json={"email": email})
+            for email in [
+                "CLIENTE@EXAMPLE.COM",
+                "missing@example.com",
+                "inativo@example.com",
+                "admin@example.com",
+            ]
+        ]
+
+        assert {response.status_code for response in responses} == {202}
+        assert {response.text for response in responses} == {
+            '{"message":"Se o e-mail estiver cadastrado, enviaremos instruções."}'
+        }
+        assert len(fake_relay.sent) == 1
+        template_key, to, payload = fake_relay.sent[0]
+        assert template_key == "devbutter_password_recovery"
+        assert to == "cliente@example.com"
+        assert payload["expires_at"]
+        raw_token = payload["password_recovery_url"].rsplit("/", 1)[-1]
+
+        tokens = list((await db_session.execute(select(PasswordRecoveryToken))).scalars())
+        assert len(tokens) == 1
+        assert tokens[0].token_hash != raw_token
+        assert raw_token not in tokens[0].token_hash
+        assert (await client.get(f"/accounts/password-setup/{raw_token}")).status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
+
+
+async def test_password_recovery_invalidates_previous_token(
+    client: AsyncClient, db_session: AsyncSession
+):
+    fake_relay = _mock_relay()
+    try:
+        await signup(client, email="repeat@example.com")
+
+        first = await client.post(
+            "/accounts/password-recovery", json={"email": "repeat@example.com"}
+        )
+        second = await client.post(
+            "/accounts/password-recovery", json={"email": "REPEAT@EXAMPLE.COM"}
+        )
+
+        assert first.status_code == second.status_code == 202
+        assert len(fake_relay.sent) == 2
+        first_token = fake_relay.sent[0][2]["password_recovery_url"].rsplit("/", 1)[-1]
+        second_token = fake_relay.sent[1][2]["password_recovery_url"].rsplit("/", 1)[-1]
+        assert first_token != second_token
+        result = await db_session.execute(select(PasswordRecoveryToken))
+        tokens_by_hash = {token.token_hash: token for token in result.scalars()}
+        assert tokens_by_hash[hashlib.sha256(first_token.encode()).hexdigest()].used_at is not None
+        assert tokens_by_hash[hashlib.sha256(second_token.encode()).hexdigest()].used_at is None
+        assert (await client.get(f"/accounts/password-setup/{first_token}")).status_code == 404
+        assert (await client.get(f"/accounts/password-setup/{second_token}")).status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
 
 
 async def test_user_can_select_another_owned_account_and_data_stays_scoped(client: AsyncClient):

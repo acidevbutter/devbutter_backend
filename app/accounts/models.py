@@ -155,6 +155,25 @@ class PasswordSetupToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PasswordRecoveryToken(Base):
+    """One-time token for an existing portal user to replace a password.
+
+    This deliberately has its own table: a recovery token must never be
+    accepted by the onboarding-only password-setup endpoints.
+    """
+
+    __tablename__ = "password_recovery_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class CompanyFeature(Base):
     """A feature toggled on for a Company whose effect provisions a
     resource on asaas_payment -- e.g. "sells_via_api" provisions an

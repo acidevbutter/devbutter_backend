@@ -4,8 +4,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.models import (
@@ -14,17 +14,19 @@ from app.accounts.models import (
     AsaasSubaccountLink,
     Company,
     CompanyFeature,
+    PasswordRecoveryToken,
     PasswordSetupToken,
     User,
 )
+from app.accounts.schemas import AccountCreate, AccountSignup, AccountUpdate, CompanyCreate
+from app.core.exceptions import ConflictError
 
 _PASSWORD_SETUP_TOKEN_TTL = timedelta(days=7)
+_PASSWORD_RECOVERY_TOKEN_TTL = timedelta(minutes=45)
 
 
 def _hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
-from app.accounts.schemas import AccountCreate, AccountSignup, AccountUpdate, CompanyCreate
-from app.core.exceptions import ConflictError
 
 
 class AccountRepository:
@@ -56,6 +58,12 @@ class AccountRepository:
 
     async def get_user_by_email(self, email: str) -> User | None:
         result = await self.session.execute(select(User).where(User.email == email))
+        return result.scalar_one_or_none()
+
+    async def get_user_by_normalized_email(self, email: str) -> User | None:
+        result = await self.session.execute(
+            select(User).where(func.lower(User.email) == email.strip().lower())
+        )
         return result.scalar_one_or_none()
 
     async def get_company(self, company_id: uuid.UUID) -> Company | None:
@@ -186,7 +194,9 @@ class AccountRepository:
         await self.session.refresh(link)
         return link
 
-    async def create_password_setup_token(self, user_id: uuid.UUID) -> tuple[str, PasswordSetupToken]:
+    async def create_password_setup_token(
+        self, user_id: uuid.UUID
+    ) -> tuple[str, PasswordSetupToken]:
         raw_token = secrets.token_urlsafe(32)
         token = PasswordSetupToken(
             user_id=user_id,
@@ -200,7 +210,9 @@ class AccountRepository:
 
     async def get_valid_password_setup_token(self, raw_token: str) -> PasswordSetupToken | None:
         result = await self.session.execute(
-            select(PasswordSetupToken).where(PasswordSetupToken.token_hash == _hash_token(raw_token))
+            select(PasswordSetupToken).where(
+                PasswordSetupToken.token_hash == _hash_token(raw_token)
+            )
         )
         token = result.scalar_one_or_none()
         if token is None or token.used_at is not None:
@@ -218,6 +230,34 @@ class AccountRepository:
     async def mark_password_setup_token_used(self, token: PasswordSetupToken) -> None:
         token.used_at = datetime.now(UTC)
         await self.session.commit()
+
+    async def create_password_recovery_token(
+        self, user_id: uuid.UUID
+    ) -> tuple[str, PasswordRecoveryToken]:
+        now = datetime.now(UTC)
+        await self.session.execute(
+            update(PasswordRecoveryToken)
+            .where(
+                PasswordRecoveryToken.user_id == user_id,
+                PasswordRecoveryToken.used_at.is_(None),
+                PasswordRecoveryToken.expires_at > now,
+            )
+            .values(used_at=now)
+        )
+        raw_token = secrets.token_urlsafe(32)
+        token = PasswordRecoveryToken(
+            user_id=user_id,
+            token_hash=_hash_token(raw_token),
+            expires_at=now + _PASSWORD_RECOVERY_TOKEN_TTL,
+        )
+        self.session.add(token)
+        try:
+            await self.session.commit()
+        except SQLAlchemyError:
+            await self.session.rollback()
+            raise
+        await self.session.refresh(token)
+        return raw_token, token
 
     async def set_password(self, user: User, password_hash: str) -> None:
         user.password_hash = password_hash
