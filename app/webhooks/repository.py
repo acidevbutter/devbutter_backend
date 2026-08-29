@@ -3,8 +3,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ConflictError
 from app.webhooks.models import WebhookEvent
 
 
@@ -18,19 +20,37 @@ class WebhookEventRepository:
         event_type: str,
         related_invoice_id: uuid.UUID | None,
         payload: dict[str, Any],
+        event_id: str | None = None,
     ) -> WebhookEvent:
         event = WebhookEvent(
             event_type=event_type,
             related_invoice_id=related_invoice_id,
             payload=payload,
+            event_id=event_id,
         )
         self.session.add(event)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            # UNIQUE(event_id) violated -- concurrent request with the same
+            # event_id already committed first (check-then-create race in
+            # the caller). Same effect as get_by_event_id finding it first.
+            raise ConflictError(f"Webhook event {event_id!r} already recorded") from exc
         await self.session.refresh(event)
         return event
 
     async def get(self, event_id: uuid.UUID) -> WebhookEvent | None:
         return await self.session.get(WebhookEvent, event_id)
+
+    async def get_by_event_id(self, event_id: str) -> WebhookEvent | None:
+        """Idempotency lookup by the emitter-assigned event_id (not this
+        table's own primary key) -- see WebhookEvent.event_id docstring.
+        """
+        result = await self.session.execute(
+            select(WebhookEvent).where(WebhookEvent.event_id == event_id)
+        )
+        return result.scalar_one_or_none()
 
     async def list(
         self,
