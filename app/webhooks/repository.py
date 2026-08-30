@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
@@ -22,22 +23,28 @@ class WebhookEventRepository:
         payload: dict[str, Any],
         event_id: str | None = None,
     ) -> WebhookEvent:
-        event = WebhookEvent(
-            event_type=event_type,
-            related_invoice_id=related_invoice_id,
-            payload=payload,
-            event_id=event_id,
+        dialect = self.session.get_bind().dialect.name
+        statement_factory = (
+            postgresql_insert if dialect == "postgresql" else sqlite_insert
         )
-        self.session.add(event)
-        try:
-            await self.session.commit()
-        except IntegrityError as exc:
-            await self.session.rollback()
-            # UNIQUE(event_id) violated -- concurrent request with the same
-            # event_id already committed first (check-then-create race in
-            # the caller). Same effect as get_by_event_id finding it first.
-            raise ConflictError(f"Webhook event {event_id!r} already recorded") from exc
-        await self.session.refresh(event)
+        statement = (
+            statement_factory(WebhookEvent)
+            .values(
+                event_type=event_type,
+                related_invoice_id=related_invoice_id,
+                payload=payload,
+                event_id=event_id,
+            )
+            .on_conflict_do_nothing(index_elements=[WebhookEvent.event_id])
+            .returning(WebhookEvent)
+        )
+        event = (await self.session.execute(statement)).scalar_one_or_none()
+        await self.session.commit()
+        if event is None:
+            # The insert lost the UNIQUE(event_id) race. No rollback is
+            # needed, which keeps independent request sessions isolated even
+            # when SQLite tests share one connection.
+            raise ConflictError(f"Webhook event {event_id!r} already recorded")
         return event
 
     async def get(self, event_id: uuid.UUID) -> WebhookEvent | None:
