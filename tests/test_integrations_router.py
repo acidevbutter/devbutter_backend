@@ -278,6 +278,10 @@ async def test_reactive_rotate_key_malformed_timestamp_header_is_401(
 ):
     monkeypatch.setattr(settings, "devbutter_selolibertaria_relay_hmac_secret", SECRET)
     link = await _create_link(db_session, "acc_reactive_bad_timestamp")
+    # This is a signature-validation test. The route resolves its clients before
+    # handling the request, so keep it independent from the local mTLS files.
+    app.dependency_overrides[get_asaas_client] = _FakeAsaasClient
+    app.dependency_overrides[get_selolibertaria_client] = _FakeSelolibertariaClient
 
     body = json.dumps({"event_id": str(uuid.uuid4()), "reason": "unauthorized"}).encode()
     headers = _signed_headers(body)
@@ -291,6 +295,9 @@ async def test_reactive_rotate_key_malformed_timestamp_header_is_401(
 
     assert response.status_code == 401
     assert response.json() == {"detail": "invalid_signature"}
+
+    app.dependency_overrides.pop(get_asaas_client, None)
+    app.dependency_overrides.pop(get_selolibertaria_client, None)
 
 
 async def test_webhook_event_repository_create_same_event_id_raises_conflict(
