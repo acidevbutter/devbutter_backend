@@ -1,13 +1,18 @@
+import hmac
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, status
 
-from app.accounts.repository import AccountRepository
+from app.accounts.repository import AccountRepository, AsaasSubaccountLinkRepository
 from app.accounts.router import CurrentAdminAccount
+from app.core.clients.asaas_client import get_asaas_client
 from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
 from app.core.exceptions import NotFoundError, UnauthorizedError
+from app.integrations.relay_service import SelolibertariaRelayService
+from app.integrations.rotation_service import CredentialRotationService
+from app.integrations.selolibertaria_client import get_selolibertaria_client
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
@@ -26,6 +31,28 @@ def get_webhook_service(
     ],
 ) -> WebhookService:
     notification_service = NotificationService(relay_client)
+
+    def _build_rotation_service() -> CredentialRotationService:
+        # Deliberately NOT a FastAPI Depends(get_asaas_client) on this
+        # factory -- every /webhooks/asaas call (high volume, Asaas's own
+        # "at least once" PAYMENT_* delivery) would otherwise pay for
+        # constructing the mTLS AsaasClient (which eagerly loads cert files
+        # -- see docs/prompts/asaas-payment-integration/
+        # 03-prompt-devbutter-relay-e-rotacao.md's execution log) even
+        # though only the rare ACCOUNT_STATUS_* rotation trigger needs it.
+        # WebhookService only calls this factory on that rare path (see
+        # app/webhooks/service.py `_dispatch`), so plain calls to the same
+        # module-level singleton getters everywhere else in this app use
+        # are safe here too -- and a test that wants to exercise this path
+        # pre-seeds those singletons directly rather than via
+        # app.dependency_overrides (see tests/test_webhooks_asaas.py).
+        link_repository = AsaasSubaccountLinkRepository(db)
+        return CredentialRotationService(
+            get_asaas_client(),
+            link_repository,
+            SelolibertariaRelayService(get_selolibertaria_client(), link_repository),
+        )
+
     return WebhookService(
         InvoiceRepository(db),
         OrderRepository(db),
@@ -33,6 +60,7 @@ def get_webhook_service(
         notification_service,
         WebhookEventRepository(db),
         PaymentMethodRepository(db),
+        rotation_service_factory=_build_rotation_service,
     )
 
 
@@ -56,10 +84,13 @@ async def receive_asaas_webhook(
         Header(alias="asaas-access-token"),
     ] = None,
 ) -> None:
-    if (
-        not settings.asaas_webhook_access_token
-        or asaas_access_token != settings.asaas_webhook_access_token
+    if not settings.asaas_webhook_access_token or not hmac.compare_digest(
+        (asaas_access_token or "").encode("utf-8"),
+        settings.asaas_webhook_access_token.encode("utf-8"),
     ):
+        # Constant-time comparison -- was `!=` (00-levantamento-tecnico.md
+        # item B4 / C4, fixed as part of this slice's entregavel 5). Same
+        # pattern Selolibertaria's own Mercado Pago webhook already uses.
         raise UnauthorizedError("Invalid asaas-access-token")
     raw_payload = await request.json()
     await service.process_event(payload, raw_payload)

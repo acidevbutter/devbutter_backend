@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Adicionada documentação estática dos fluxos existentes do backend em
+  docs/devbutter-backend-fluxos.md e docs/devbutter-backend-fluxos.mmd,
+  incluindo forças, falhas, lacunas, pontos de atenção e limites de validação.
 - Adicionadas validação e conclusão da recuperação de senha do portal, com
   consumo atômico do token e invalidação de todas as sessões via
   `users.session_version`, aplicada a REST, refresh e Socket.IO.

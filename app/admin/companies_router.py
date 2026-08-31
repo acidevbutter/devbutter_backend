@@ -23,6 +23,8 @@ from app.admin.schemas import (
     AdminSubaccountLinkRead,
 )
 from app.core.dependencies import DbSession
+from app.integrations.relay_service import SelolibertariaRelayService
+from app.integrations.selolibertaria_client import SelolibertariaClient, get_selolibertaria_client
 
 router = APIRouter(prefix="/admin/companies", tags=["admin-companies"])
 
@@ -30,9 +32,14 @@ router = APIRouter(prefix="/admin/companies", tags=["admin-companies"])
 def get_admin_companies_service(
     db: DbSession,
     payments_service: Annotated[AdminPaymentsService, Depends(get_admin_payments_service)],
+    relay_client: Annotated[SelolibertariaClient, Depends(get_selolibertaria_client)],
 ) -> AdminCompaniesService:
+    link_repository = AsaasSubaccountLinkRepository(db)
     return AdminCompaniesService(
-        AdminRepository(db), AsaasSubaccountLinkRepository(db), payments_service
+        AdminRepository(db),
+        link_repository,
+        payments_service,
+        relay_service=SelolibertariaRelayService(relay_client, link_repository),
     )
 
 
@@ -68,6 +75,10 @@ def _link_read(link: AsaasSubaccountLink | None) -> AdminSubaccountLinkRead | No
         split_quota_percent=link.split_quota_percent,
         quota_set_by=link.quota_set_by,
         quota_updated_at=link.quota_updated_at,
+        access_token_id=link.access_token_id,
+        key_version=link.key_version,
+        selolibertaria_relay_status=link.selolibertaria_relay_status,
+        selolibertaria_relay_last_error=link.selolibertaria_relay_last_error,
     )
 
 

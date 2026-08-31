@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -127,6 +127,22 @@ class AsaasSubaccountLink(Base):
     quota_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+    # -- DevButter -> Selolibertaria credential relay + rotation bookkeeping
+    # (docs/prompts/asaas-payment-integration/03-prompt-devbutter-relay-e-rotacao.md,
+    # entregaveis 2 and 3). Deliberately never stores the api_key itself --
+    # only a reference to the AccessToken asaas_payment/Asaas issued
+    # (access_token_id) and the outcome of relaying its value onward.
+    access_token_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    key_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # pending|sent|acked|failed|blocked|rotation_blocked -- see
+    # app/integrations/relay_service.py and rotation_service.py.
+    selolibertaria_relay_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending"
+    )
+    selolibertaria_relay_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    selolibertaria_relay_last_error: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

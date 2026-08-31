@@ -268,6 +268,10 @@ class AdminSubaccountLinkRead(BaseModel):
     split_quota_percent: Decimal | None
     quota_set_by: uuid.UUID | None
     quota_updated_at: datetime | None
+    access_token_id: str | None = None
+    key_version: int = 1
+    selolibertaria_relay_status: str = "pending"
+    selolibertaria_relay_last_error: str | None = None
 
 
 class AdminCompanyDetailRead(BaseModel):

@@ -1,0 +1,68 @@
+flowchart TB
+    Browser[Frontend / cliente]
+    API[devbutter_backend FastAPI]
+    DB[(PostgreSQL)]
+    Mind[butter_mind HTTP/SSE]
+    Relay[butter_relay SQS e-mail]
+    AP[asaas_payment mTLS]
+    Asaas[Asaas]
+    Socket[Socket.IO]
+
+    Browser -->|JWT / HTTP| API
+    Browser -->|cookie httpOnly / Socket.IO| Socket
+    Socket --> API
+    API --> DB
+    API --> Mind
+    API --> Relay
+    API --> AP
+    AP --> Asaas
+    Asaas -->|webhook autenticado| API
+
+    subgraph Identity[Identidade]
+        Signup[signup/login/refresh]
+        Select[seleção de conta]
+        Recovery[password-setup/recovery]
+    end
+    API --> Signup
+    API --> Select
+    API --> Recovery
+    Recovery --> Relay
+
+    subgraph Quote[Conversão comercial]
+        Chat[conversa visitante ou autenticada]
+        Draft[extração e Quote draft]
+        Review[revisão admin]
+        Order[Order + Invoice]
+    end
+    API --> Chat
+    Chat --> Mind
+    Chat --> Draft
+    Draft --> Review
+    Review --> Order
+    Order --> AP
+    Order --> Relay
+
+    subgraph Card[Cartão salvo]
+        Context[contexto anti-replay]
+        Envelope[envelope v1]
+        Token[token provider cifrado]
+        Attempt[PaymentAttempt]
+    end
+    API --> Context
+    Browser --> Envelope
+    Envelope --> Token
+    Token --> AP
+    Token --> Attempt
+    Attempt --> AP
+
+    subgraph Admin[Operação admin]
+        Views[clientes/cotações/pedidos/faturas/conversas]
+        Ops[subaccounts/split/payments/audit]
+        MindOps[governança/uso/orçamento Mind]
+    end
+    Browser --> Views
+    Browser --> Ops
+    Browser --> MindOps
+    Views --> API
+    Ops --> API
+    MindOps --> API
