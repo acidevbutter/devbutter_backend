@@ -268,10 +268,6 @@ class AdminSubaccountLinkRead(BaseModel):
     split_quota_percent: Decimal | None
     quota_set_by: uuid.UUID | None
     quota_updated_at: datetime | None
-    access_token_id: str | None = None
-    key_version: int = 1
-    selolibertaria_relay_status: str = "pending"
-    selolibertaria_relay_last_error: str | None = None
 
 
 class AdminCompanyDetailRead(BaseModel):
@@ -291,9 +287,10 @@ class AdminSplitQuotaUpdate(BaseModel):
 
 
 class AdminLinkSubaccountRequest(BaseModel):
-    """Either references an existing subaccount (asaas_account_id) or, when
-    absent, is forwarded as a SubaccountCreate payload to provision a new
-    one -- see AdminCompaniesService.link_subaccount.
+    """References an existing Asaas subaccount by id. The subaccount must
+    already exist on Asaas (provisioned through the asaas_payment proxy);
+    this only records the read-only company <-> subaccount link -- see
+    AdminCompaniesService.link_subaccount.
     """
 
     model_config = ConfigDict(extra="allow")

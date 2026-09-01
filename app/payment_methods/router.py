@@ -2,15 +2,10 @@ import base64
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Request, status
+from fastapi import APIRouter, Body, Request, status
 
-from app.accounts.repository import AccountRepository
-from app.accounts.router import CurrentAccount, CurrentAdminAccount, CurrentCompany
-from app.core.clients.asaas_client import AsaasClient, get_asaas_client
-from app.core.dependencies import DbSession
-from app.invoices.repository import InvoiceRepository
-from app.orders.repository import OrderRepository
-from app.payment_methods.repository import PaymentMethodRepository
+from app.accounts.dependencies import CurrentAccount, CurrentAdminAccount, CurrentCompany
+from app.payment_methods.dependencies import PaymentMethodServiceDep
 from app.payment_methods.schemas import (
     PaymentCreate,
     PaymentMethodCreateResponse,
@@ -21,22 +16,7 @@ from app.payment_methods.schemas import (
     PaymentRead,
     PaymentSummary,
 )
-from app.payment_methods.service import PaymentMethodService
 
-
-def get_payment_method_service(
-    db: DbSession, asaas_client: Annotated[AsaasClient, Depends(get_asaas_client)]
-) -> PaymentMethodService:
-    return PaymentMethodService(
-        PaymentMethodRepository(db),
-        InvoiceRepository(db),
-        OrderRepository(db),
-        AccountRepository(db),
-        asaas_client,
-    )
-
-
-PaymentMethodServiceDep = Annotated[PaymentMethodService, Depends(get_payment_method_service)]
 router = APIRouter(tags=["payment-methods"])
 
 

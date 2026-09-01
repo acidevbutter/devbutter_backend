@@ -273,7 +273,7 @@ async def test_admin_set_split_quota_requires_existing_link(
     app.dependency_overrides.pop(get_asaas_client, None)
 
 
-async def test_admin_link_subaccount_creates_new_and_rejects_duplicate(
+async def test_admin_link_subaccount_requires_account_id_and_rejects_duplicate(
     client: AsyncClient, db_session: AsyncSession
 ):
     admin_tokens = await _signup_admin(client, db_session, "admin-link@example.com")
@@ -281,17 +281,26 @@ async def test_admin_link_subaccount_creates_new_and_rejects_duplicate(
     fake = FakeAsaasClient()
     app.dependency_overrides[get_asaas_client] = lambda: fake
 
-    response = await client.post(
+    # The subaccount must already exist on Asaas -- devbutter only records
+    # the read-only reference now, it does not provision.
+    missing = await client.post(
         f"/admin/companies/{company.id}/link-subaccount",
         json={"name": "Loja Nova"},
         headers=auth_headers(admin_tokens),
     )
+    assert missing.status_code == 422
+
+    response = await client.post(
+        f"/admin/companies/{company.id}/link-subaccount",
+        json={"asaas_account_id": "acc_ext"},
+        headers=auth_headers(admin_tokens),
+    )
     assert response.status_code == 200
-    assert response.json()["asaas_account_id"] == "acc_new"
+    assert response.json()["asaas_account_id"] == "acc_ext"
 
     duplicate = await client.post(
         f"/admin/companies/{company.id}/link-subaccount",
-        json={"name": "Loja Nova 2"},
+        json={"asaas_account_id": "acc_ext_2"},
         headers=auth_headers(admin_tokens),
     )
     assert duplicate.status_code == 422

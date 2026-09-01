@@ -1,13 +1,14 @@
 import uuid
 from datetime import date
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
-from app.accounts.repository import AccountRepository
-from app.accounts.router import CurrentAdminAccount
-from app.admin.mind_service import AdminMindService
-from app.admin.repository import AdminRepository
+from app.accounts.dependencies import CurrentAdminAccount
+from app.admin.dependencies import (
+    AdminMindServiceDep,
+    AdminReadServiceDep,
+    AdminServiceDep,
+)
 from app.admin.schemas import (
     AdminCatalogEntryRead,
     AdminCatalogListRead,
@@ -34,57 +35,8 @@ from app.admin.schemas import (
     AdminOrderListRead,
     AdminQuoteListRead,
 )
-from app.admin.service import AdminReadService, AdminService
-from app.conversations.repository import ConversationRepository
-from app.core.clients.asaas_client import AsaasClient, get_asaas_client
-from app.core.clients.butter_mind_client import ButterMindClient, get_butter_mind_client
-from app.core.clients.relay_client import RelayClient, get_relay_client
-from app.core.dependencies import DbSession
-from app.invoices.repository import InvoiceRepository
-from app.notifications.service import NotificationService
-from app.orders.repository import OrderRepository
 from app.orders.schemas import OrderApprovalRequest, OrderRead
-from app.orders.service import OrderService
-from app.quotes.repository import QuoteRepository
 from app.quotes.schemas import QuoteEdit, QuoteRead
-from app.quotes.service import QuoteService
-
-
-def get_admin_service(
-    db: DbSession,
-    asaas_client: Annotated[AsaasClient, Depends(get_asaas_client)],
-    relay_client: Annotated[RelayClient, Depends(get_relay_client)],
-) -> AdminService:
-    quote_service = QuoteService(QuoteRepository(db))
-    notification_service = NotificationService(relay_client)
-    order_service = OrderService(
-        OrderRepository(db),
-        AccountRepository(db),
-        InvoiceRepository(db),
-        asaas_client,
-        notification_service,
-    )
-    return AdminService(quote_service, order_service, AdminRepository(db))
-
-
-AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
-
-
-def get_admin_read_service(db: DbSession) -> AdminReadService:
-    return AdminReadService(QuoteService(QuoteRepository(db)), AdminRepository(db))
-
-
-AdminReadServiceDep = Annotated[AdminReadService, Depends(get_admin_read_service)]
-
-
-def get_admin_mind_service(
-    db: DbSession,
-    mind_client: Annotated[ButterMindClient, Depends(get_butter_mind_client)],
-) -> AdminMindService:
-    return AdminMindService(ConversationRepository(db), mind_client)
-
-
-AdminMindServiceDep = Annotated[AdminMindService, Depends(get_admin_mind_service)]
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -181,9 +133,7 @@ async def list_all_quotes(
     page_size: int = 20,
 ) -> AdminQuoteListRead:
     page, page_size, offset = _pagination(page, page_size)
-    quotes, total = await service.list_all_quotes(
-        status_=status, offset=offset, limit=page_size
-    )
+    quotes, total = await service.list_all_quotes(status_=status, offset=offset, limit=page_size)
     return AdminQuoteListRead(
         items=[QuoteRead.model_validate(quote) for quote in quotes],
         total=total,

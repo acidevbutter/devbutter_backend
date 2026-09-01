@@ -24,9 +24,14 @@ devbutter_platform (this service) -- Postgres (users, companies, accounts, conve
 
 ## Modules
 
-Each domain follows the same five-file shape (`router.py`, `schemas.py`, `models.py`, `service.py`,
-`repository.py`); `admin/` and `notifications/` deviate deliberately because they are an aggregate
-view and an integration adapter (see `docs/architecture/diagrams/backend-structure.mmd`):
+Each domain follows the same six-file shape (`router.py`, `schemas.py`, `models.py`, `service.py`,
+`repository.py`, `dependencies.py` — the latter holds the domain's DI wiring: `get_*_service` /
+`get_*_repository` factories, their `Annotated[..., Depends(...)]` aliases, and the auth deps the
+domain owns, so `router.py` is routes only). When one domain needs another's DI it imports from
+`app.<owner>.dependencies`, never from `app.<owner>.router`; `core/dependencies.py` keeps only
+cross-domain wiring (`DbSession`). `admin/` and `notifications/` still deviate deliberately because
+they are an aggregate view and an integration adapter (see
+`docs/architecture/diagrams/backend-structure.mmd`):
 
 | Module | Responsibility |
 |---|---|

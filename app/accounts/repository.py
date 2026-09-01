@@ -363,19 +363,6 @@ class AsaasSubaccountLinkRepository:
         await self.session.refresh(record)
         return record
 
-    async def list_with_access_token(self) -> list[AsaasSubaccountLink]:
-        """Links that have already been through the initial relay (and so
-        have a known active access_token_id) -- the population the
-        proactive rotation job iterates (see
-        app/integrations/rotation_service.py). Links still `blocked` on the
-        initial relay (no access_token_id yet) are skipped -- there is
-        nothing yet to rotate for them.
-        """
-        result = await self.session.execute(
-            select(AsaasSubaccountLink).where(AsaasSubaccountLink.access_token_id.is_not(None))
-        )
-        return list(result.scalars())
-
 
 class CompanyFeatureRepository:
     def __init__(self, session: AsyncSession):

@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     butter_mind_base_url: str = "http://mind-api:8000"
     butter_mind_request_timeout_seconds: float = 30.0
     butter_mind_internal_api_key: str = ""
+    butter_mind_service_api_key: str = ""
 
     # -- core/clients/relay_client.py: boto3 SQS publish into butter_relay's
     # shared queue. project_id identifies the "devbutter-platform" Project
@@ -74,19 +75,6 @@ class Settings(BaseSettings):
     # Asaas webhook receiver -- validates the `asaas-access-token` header.
     # See https://docs.asaas.com/docs/duvidas-frequentes-webhooks
     asaas_webhook_access_token: str = ""
-
-    # -- app/integrations/{selolibertaria_client,router}.py: server-to-server
-    # credential relay + rotation with selolibertaria/backend. Signature
-    # scheme and header names are fixed by
-    # docs/prompts/asaas-payment-integration/CONTRATO-HMAC.md -- both repos
-    # implement it identically and share the same secret value out of band
-    # (never commit the real value). Deliberately a dedicated secret, not a
-    # reuse of TRUSTED_PROXY_SECRET/AUDIT_SIGNING_KEY (asaas_payment, mTLS
-    # trust boundary) or FIELD_ENCRYPTION_KEY (encrypts data at rest, not a
-    # transport signature).
-    selolibertaria_backend_base_url: str = "http://selolibertaria-backend:8000"
-    devbutter_selolibertaria_relay_hmac_secret: str = ""
-    selolibertaria_relay_request_timeout_seconds: float = 10.0
 
     @property
     def payment_payload_keyring_dict(self) -> dict[str, str]:

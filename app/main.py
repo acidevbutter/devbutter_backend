@@ -14,8 +14,6 @@ from app.conversations.socket_server import sio
 from app.core.clients.asaas_client import close_asaas_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
-from app.integrations.router import router as integrations_router
-from app.integrations.selolibertaria_client import close_selolibertaria_client
 from app.invoices.router import account_router as account_invoices_router
 from app.invoices.router import router as invoices_router
 from app.knowledge.router import router as knowledge_router
@@ -37,7 +35,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     await close_asaas_client()
     await close_butter_mind_client()
-    await close_selolibertaria_client()
 
 
 app = FastAPI(
@@ -65,7 +62,6 @@ app.include_router(service_catalog_router)
 app.include_router(admin_router)
 app.include_router(admin_payments_router)
 app.include_router(admin_companies_router)
-app.include_router(integrations_router)
 app.include_router(knowledge_router)
 
 

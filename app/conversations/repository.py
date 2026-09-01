@@ -45,3 +45,11 @@ class ConversationRepository:
         await self.session.commit()
         await self.session.refresh(conversation)
         return conversation
+
+    async def set_mind_session_id(
+        self, conversation: Conversation, mind_session_id: str
+    ) -> Conversation:
+        conversation.mind_session_id = mind_session_id
+        await self.session.commit()
+        await self.session.refresh(conversation)
+        return conversation

@@ -1,13 +1,8 @@
-from collections.abc import Callable
 from typing import Any
 
 from app.accounts.repository import AccountRepository
 from app.core.decorators import log_errors
 from app.core.exceptions import NotFoundError
-from app.integrations.rotation_service import (
-    ACCOUNT_STATUS_ROTATION_TRIGGERS,
-    CredentialRotationService,
-)
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
@@ -44,7 +39,6 @@ class WebhookService:
         notification_service: NotificationService,
         event_repository: WebhookEventRepository,
         payment_method_repository: PaymentMethodRepository | None = None,
-        rotation_service_factory: Callable[[], CredentialRotationService] | None = None,
     ):
         self.invoice_repository = invoice_repository
         self.order_repository = order_repository
@@ -52,16 +46,6 @@ class WebhookService:
         self.notification_service = notification_service
         self.event_repository = event_repository
         self.payment_method_repository = payment_method_repository
-        # Optional, and deliberately a *factory* rather than a pre-built
-        # CredentialRotationService -- only ACCOUNT_STATUS_* events need it
-        # (docs/prompts/asaas-payment-integration/
-        # 03-prompt-devbutter-relay-e-rotacao.md entregavel 3), and building
-        # one eagerly for every webhook call would construct the mTLS
-        # AsaasClient (cert-loading) on PAYMENT_*'s hot path for no reason.
-        # None in any caller that only ever forwards PAYMENT_* events is
-        # fine -- _dispatch no-ops on ACCOUNT_STATUS_* without it rather
-        # than raising, so existing payment-only callers keep working.
-        self._rotation_service_factory = rotation_service_factory
 
     async def process_event(
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
@@ -95,22 +79,15 @@ class WebhookService:
         return await self.event_repository.mark_processed(audit_event)
 
     async def _dispatch(self, event: AsaasWebhookEvent) -> None:
-        """Routes by event name: PAYMENT_* keeps going through the existing
-        Invoice/Order reconciliation; ACCOUNT_STATUS_* (only the two
-        rotation-relevant ones -- see ACCOUNT_STATUS_ROTATION_TRIGGERS) goes
-        to CredentialRotationService instead. Any other ACCOUNT_STATUS_*
-        variant, or an event carrying neither `payment` nor a recognized
-        account-status trigger, is accepted (200/204) and audited but
-        otherwise a no-op -- Asaas's "at least once" delivery and evolving
-        payload rules mean unknown events must never fail the webhook
-        (00-levantamento-tecnico.md item B7).
+        """PAYMENT_* events go through the Invoice/Order reconciliation
+        below. Everything else -- ACCOUNT_STATUS_* and any event carrying no
+        `payment` -- is accepted (200/204) and audited but otherwise a
+        no-op: Asaas's "at least once" delivery and evolving payload rules
+        mean unknown events must never fail the webhook
+        (00-levantamento-tecnico.md item B7). Subaccount credential
+        lifecycle is no longer handled here -- the asaas_payment proxy owns
+        it.
         """
-        if event.event in ACCOUNT_STATUS_ROTATION_TRIGGERS:
-            if self._rotation_service_factory is not None:
-                account_id = (event.account or {}).get("id") if event.account else None
-                rotation_service = self._rotation_service_factory()
-                await rotation_service.handle_account_status_event(event.event, account_id)
-            return
         if event.payment is not None:
             await self.handle_payment_event(event)
 

@@ -37,7 +37,10 @@ class ButterMindClient:
     @log_call
     async def create_diagnosis_session(self, session_id: str) -> dict[str, Any]:
         return await self._request(
-            "POST", "/diagnosis/sessions", json_body={"session_id": session_id}
+            "POST",
+            "/diagnosis/sessions",
+            json_body={"session_id": session_id},
+            headers=self._service_headers(),
         )
 
     @log_call
@@ -46,11 +49,16 @@ class ButterMindClient:
             "POST",
             f"/diagnosis/sessions/{mind_session_id}/messages",
             json_body={"content": content},
+            headers=self._service_headers(),
         )
 
     @log_call
     async def submit_diagnosis(self, mind_session_id: str) -> dict[str, Any]:
-        return await self._request("POST", f"/diagnosis/sessions/{mind_session_id}/submit")
+        return await self._request(
+            "POST",
+            f"/diagnosis/sessions/{mind_session_id}/submit",
+            headers=self._service_headers(),
+        )
 
     @log_call
     async def get_dashboard_overview(self) -> dict[str, Any]:
@@ -103,12 +111,14 @@ class ButterMindClient:
                 "POST",
                 f"/diagnosis/sessions/{mind_session_id}/messages/stream",
                 json={"content": content},
+                headers=self._service_headers(),
             ) as response:
                 if response.status_code >= 400:
                     body = await response.aread()
                     raise UpstreamServiceError(
                         f"butter_mind returned {response.status_code} for stream messages: "
-                        f"{body.decode()}"
+                        f"{body.decode()}",
+                        status_code=response.status_code,
                     )
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
@@ -133,7 +143,8 @@ class ButterMindClient:
             raise UpstreamServiceError(f"butter_mind request failed: {exc}") from exc
         if response.status_code >= 400:
             raise UpstreamServiceError(
-                f"butter_mind returned {response.status_code} for {method} {path}: {response.text}"
+                f"butter_mind returned {response.status_code} for {method} {path}: {response.text}",
+                status_code=response.status_code,
             )
         return response.json()
 
@@ -152,6 +163,14 @@ class ButterMindClient:
             json_body=json_body,
             headers={"X-Internal-Api-Key": settings.butter_mind_internal_api_key},
         )
+
+    def _service_headers(self) -> dict[str, str]:
+        """Auth for the public diagnosis/chat endpoints (RequireServiceApiKey on
+        butter_mind's side) -- distinct from _internal_request's admin key.
+        """
+        if not settings.butter_mind_service_api_key:
+            raise UpstreamServiceError("BUTTER_MIND_SERVICE_API_KEY is not configured")
+        return {"X-Service-Api-Key": settings.butter_mind_service_api_key}
 
     async def aclose(self) -> None:
         await self._client.aclose()

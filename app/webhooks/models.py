@@ -9,15 +9,10 @@ from app.db.base import Base
 
 
 class WebhookEvent(Base):
-    """Durable audit record for every accepted webhook-shaped delivery:
-    Asaas payment/account webhooks, and (per CONTRATO-HMAC.md's "idempotencia
-    de negocio... event_id em asaas_relay_event / WebhookEvent") the
-    Selolibertaria -> DevButter reactive rotate-key request handled in
-    app/integrations/router.py, even though that one isn't itself an Asaas
+    """Durable audit record for every accepted Asaas payment/account
     webhook. `event_id` is the emitter-assigned idempotency key when the
-    delivery carries one (Asaas events don't map one field-for-field today;
-    the reactive rotate-key request always sets it) -- nullable + unique so
-    it's an opt-in dedupe key, not a requirement for every row.
+    delivery carries one -- nullable + unique so it's an opt-in dedupe key,
+    not a requirement for every row.
     """
 
     __tablename__ = "webhook_events"

@@ -1,38 +1,16 @@
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
-from app.accounts.router import CurrentAccount, CurrentAdminAccount, CurrentUser
-from app.core.dependencies import DbSession
+from app.accounts.dependencies import CurrentAccount, CurrentAdminAccount, CurrentUser
 from app.core.exceptions import NotFoundError
+from app.invoices.dependencies import InvoiceRepositoryDep
 from app.invoices.repository import InvoiceRepository
+from app.orders.dependencies import OrderRepositoryDep
 from app.orders.repository import OrderRepository
+from app.quotes.dependencies import QuoteServiceDep
 from app.quotes.models import Quote
-from app.quotes.repository import QuoteRepository
 from app.quotes.schemas import QuoteManualCreate, QuoteRead
-from app.quotes.service import QuoteService
-
-
-def get_quote_service(db: DbSession) -> QuoteService:
-    return QuoteService(QuoteRepository(db))
-
-
-QuoteServiceDep = Annotated[QuoteService, Depends(get_quote_service)]
-
-
-def get_order_repository(db: DbSession) -> OrderRepository:
-    return OrderRepository(db)
-
-
-OrderRepositoryDep = Annotated[OrderRepository, Depends(get_order_repository)]
-
-
-def get_invoice_repository(db: DbSession) -> InvoiceRepository:
-    return InvoiceRepository(db)
-
-
-InvoiceRepositoryDep = Annotated[InvoiceRepository, Depends(get_invoice_repository)]
 
 router = APIRouter(prefix="/quotes", tags=["quotes"])
 

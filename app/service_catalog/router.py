@@ -1,24 +1,14 @@
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
-from app.accounts.router import CurrentAccount
-from app.core.dependencies import DbSession
-from app.service_catalog.repository import ServiceCatalogRepository
+from app.accounts.dependencies import CurrentAccount
+from app.service_catalog.dependencies import ServiceCatalogServiceDep
 from app.service_catalog.schemas import (
     ServiceCatalogEntryCreate,
     ServiceCatalogEntryRead,
     ServiceCatalogEntryUpdate,
 )
-from app.service_catalog.service import ServiceCatalogService
-
-
-def get_service_catalog_service(db: DbSession) -> ServiceCatalogService:
-    return ServiceCatalogService(ServiceCatalogRepository(db))
-
-
-ServiceCatalogServiceDep = Annotated[ServiceCatalogService, Depends(get_service_catalog_service)]
 
 router = APIRouter(prefix="/service-catalog", tags=["service-catalog"])
 

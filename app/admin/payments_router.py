@@ -1,26 +1,13 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from app.accounts.repository import AsaasSubaccountLinkRepository
-from app.accounts.router import CurrentAdminAccount
-from app.admin.payments_service import AdminPaymentsService
-from app.core.clients.asaas_client import AsaasClient, get_asaas_client
-from app.core.dependencies import DbSession
+from app.accounts.dependencies import CurrentAdminAccount
+from app.admin.dependencies import AdminPaymentsServiceDep
 
 router = APIRouter(prefix="/admin", tags=["admin-payments"])
-
-
-def get_admin_payments_service(
-    asaas_client: Annotated[AsaasClient, Depends(get_asaas_client)],
-    db: DbSession,
-) -> AdminPaymentsService:
-    return AdminPaymentsService(asaas_client, AsaasSubaccountLinkRepository(db))
-
-
-AdminPaymentsServiceDep = Annotated[AdminPaymentsService, Depends(get_admin_payments_service)]
 
 
 # -- Subaccounts --------------------------------------------------
@@ -89,9 +76,7 @@ async def list_access_tokens(
     return await service.list_access_tokens(account_id)
 
 
-@router.post(
-    "/subaccounts/{account_id}/access-tokens", summary="Create an additional API key"
-)
+@router.post("/subaccounts/{account_id}/access-tokens", summary="Create an additional API key")
 async def create_access_token(
     account_id: str,
     payload: dict[str, Any],
@@ -101,9 +86,7 @@ async def create_access_token(
     return await service.create_access_token(account_id, payload)
 
 
-@router.delete(
-    "/subaccounts/{account_id}/access-tokens/{token_id}", summary="Revoke an API key"
-)
+@router.delete("/subaccounts/{account_id}/access-tokens/{token_id}", summary="Revoke an API key")
 async def revoke_access_token(
     account_id: str,
     token_id: str,
@@ -174,9 +157,7 @@ async def get_payment(
     return await service.get_payment(account_id, payment_id)
 
 
-@router.post(
-    "/subaccounts/{account_id}/payments/{payment_id}/refund", summary="Refund a charge"
-)
+@router.post("/subaccounts/{account_id}/payments/{payment_id}/refund", summary="Refund a charge")
 async def refund_payment(
     account_id: str,
     payment_id: str,
@@ -187,9 +168,7 @@ async def refund_payment(
     return await service.refund_payment(account_id, payment_id, payload or {})
 
 
-@router.post(
-    "/subaccounts/{account_id}/payments/{payment_id}/cancel", summary="Cancel a charge"
-)
+@router.post("/subaccounts/{account_id}/payments/{payment_id}/cancel", summary="Cancel a charge")
 async def cancel_payment(
     account_id: str,
     payment_id: str,

@@ -66,8 +66,14 @@ class UpstreamServiceError(Exception):
     from "one of our own upstream services is down."
     """
 
-    def __init__(self, detail: str = "An upstream service is unavailable"):
+    def __init__(
+        self, detail: str = "An upstream service is unavailable", status_code: int | None = None
+    ):
         self.detail = detail
+        # The upstream HTTP status, when the failure was a >=400 response (vs. a
+        # transport error). Not exposed by the handler -- callers use it to tell
+        # e.g. "the butter_mind session is gone" (404) from a generic outage.
+        self.status_code = status_code
 
 
 class PaymentProviderUnavailableError(Exception):

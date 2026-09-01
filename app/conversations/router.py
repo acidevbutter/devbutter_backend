@@ -1,11 +1,10 @@
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
-from app.accounts.router import AccountServiceDep, OptionalCurrentAccount
+from app.accounts.dependencies import AccountServiceDep, OptionalCurrentAccount
+from app.conversations.dependencies import ConversationServiceDep
 from app.conversations.models import Conversation
-from app.conversations.repository import ConversationRepository
 from app.conversations.schemas import (
     ConversationMessageCreate,
     ConversationRead,
@@ -13,39 +12,9 @@ from app.conversations.schemas import (
     DraftQuoteFromConversation,
     DraftQuoteRequest,
 )
-from app.conversations.service import ConversationService
-from app.core.clients.butter_mind_client import ButterMindClient, get_butter_mind_client
-from app.core.clients.relay_client import RelayClient, get_relay_client
-from app.core.dependencies import DbSession
 from app.core.exceptions import NotFoundError, ValidationFailedError
-from app.notifications.service import NotificationService
-from app.quotes.repository import QuoteRepository
-from app.quotes.service import QuoteService
-
-
-def get_conversation_service(
-    db: DbSession, mind_client: Annotated[ButterMindClient, Depends(get_butter_mind_client)]
-) -> ConversationService:
-    return ConversationService(ConversationRepository(db), mind_client)
-
-
-ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
-
-
-def get_quote_service(db: DbSession) -> QuoteService:
-    return QuoteService(QuoteRepository(db))
-
-
-QuoteServiceDep = Annotated[QuoteService, Depends(get_quote_service)]
-
-
-def get_notification_service(
-    relay_client: Annotated[RelayClient, Depends(get_relay_client)],
-) -> NotificationService:
-    return NotificationService(relay_client)
-
-
-NotificationServiceDep = Annotated[NotificationService, Depends(get_notification_service)]
+from app.notifications.dependencies import NotificationServiceDep
+from app.quotes.dependencies import QuoteServiceDep
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 

@@ -1,29 +1,12 @@
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from app.accounts.router import CurrentAccount, CurrentUser
-from app.core.dependencies import DbSession
+from app.accounts.dependencies import CurrentAccount, CurrentUser
 from app.core.exceptions import NotFoundError
-from app.invoices.repository import InvoiceRepository
+from app.invoices.dependencies import InvoiceServiceDep
 from app.invoices.schemas import InvoiceRead
-from app.invoices.service import InvoiceService
-from app.orders.repository import OrderRepository
-
-
-def get_invoice_service(db: DbSession) -> InvoiceService:
-    return InvoiceService(InvoiceRepository(db))
-
-
-InvoiceServiceDep = Annotated[InvoiceService, Depends(get_invoice_service)]
-
-
-def get_order_repository(db: DbSession) -> OrderRepository:
-    return OrderRepository(db)
-
-
-OrderRepositoryDep = Annotated[OrderRepository, Depends(get_order_repository)]
+from app.orders.dependencies import OrderRepositoryDep
 
 router = APIRouter(prefix="/orders/{order_id}/invoices", tags=["invoices"])
 account_router = APIRouter(prefix="/invoices", tags=["invoices"])

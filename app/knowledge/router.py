@@ -1,20 +1,10 @@
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
-from app.accounts.router import CurrentAdminAccount
-from app.core.dependencies import DbSession
-from app.knowledge.repository import KnowledgeRepository
+from app.accounts.dependencies import CurrentAdminAccount
+from app.knowledge.dependencies import KnowledgeServiceDep
 from app.knowledge.schemas import KnowledgeEntryCreate, KnowledgeEntryRead, KnowledgeEntryUpdate
-from app.knowledge.service import KnowledgeService
-
-
-def get_knowledge_service(db: DbSession) -> KnowledgeService:
-    return KnowledgeService(KnowledgeRepository(db))
-
-
-KnowledgeServiceDep = Annotated[KnowledgeService, Depends(get_knowledge_service)]
 
 router = APIRouter(prefix="/admin/knowledge-entries", tags=["knowledge"])
 

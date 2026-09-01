@@ -3,9 +3,12 @@ import uuid
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.conversations.models import Conversation
+from app.conversations.repository import ConversationRepository
 from app.core.clients.asaas_client import get_asaas_client
 from app.core.clients.butter_mind_client import get_butter_mind_client
 from app.core.clients.relay_client import get_relay_client
+from app.core.exceptions import UpstreamServiceError
 from app.main import app
 from app.quotes.repository import QuoteRepository
 from tests.conftest import auth_headers, signup
@@ -306,6 +309,66 @@ async def test_quote_references_are_unique_and_sequential(
     second_ref = second.json()["reference"]
     assert first_ref != second_ref
     assert int(second_ref.split("-")[1]) == int(first_ref.split("-")[1]) + 1
+
+
+class _SessionAwareButterMindClient(_FakeButterMindClient):
+    """Tracks which mind_session_ids it has handed out; a message to any other
+    id fails the way butter_mind does when its own session store was reset
+    (404), so ConversationService's self-heal can be exercised.
+    """
+
+    def __init__(self, extraction: dict):
+        super().__init__(extraction)
+        self.known: set[str] = set()
+        self.created_sessions = 0
+
+    async def create_diagnosis_session(self, session_id: str) -> dict:
+        self.created_sessions += 1
+        mind_id = f"mind-{session_id}"
+        self.known.add(mind_id)
+        return {"id": mind_id}
+
+    async def send_diagnosis_message(self, mind_session_id: str, content: str) -> dict:
+        if mind_session_id not in self.known:
+            raise UpstreamServiceError(
+                f"butter_mind returned 404 for POST /diagnosis/sessions/{mind_session_id}/messages",
+                status_code=404,
+            )
+        return await super().send_diagnosis_message(mind_session_id, content)
+
+
+async def test_message_self_heals_when_mind_session_is_gone(
+    client: AsyncClient, db_session: AsyncSession
+):
+    fake = _SessionAwareButterMindClient(_extraction())
+    app.dependency_overrides[get_butter_mind_client] = lambda: fake
+    try:
+        start = await client.post("/conversations")
+        assert start.status_code == 201, start.text
+        conversation_id = uuid.UUID(start.json()["id"])
+        assert fake.created_sessions == 1
+
+        # butter_mind lost this session (its store was reset independently).
+        repository = ConversationRepository(db_session)
+        conversation = await repository.get(conversation_id)
+        stale_id = conversation.mind_session_id
+        await repository.set_mind_session_id(conversation, f"mind-{uuid.uuid4()}")
+
+        message = await client.post(
+            f"/conversations/{conversation_id}/messages",
+            json={"content": "Quero um orcamento."},
+        )
+
+        assert message.status_code == 200, message.text
+        assert message.json()["reply"] == "Entendido."
+        assert fake.created_sessions == 2
+
+        db_session.expire_all()
+        healed = await db_session.get(Conversation, conversation_id)
+        assert healed.mind_session_id != stale_id
+        assert healed.mind_session_id in fake.known
+    finally:
+        app.dependency_overrides.pop(get_butter_mind_client, None)
 
 
 async def test_visitor_draft_quote_flow_never_calls_asaas(client: AsyncClient):

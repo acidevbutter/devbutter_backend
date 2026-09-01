@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
+from app.accounts.dependencies import CurrentAdminAccount
 from app.accounts.models import AsaasSubaccountLink
-from app.accounts.repository import AsaasSubaccountLinkRepository, CompanyFeatureRepository
-from app.accounts.router import CurrentAdminAccount
-from app.admin.companies_service import AdminCompaniesService
-from app.admin.feature_service import FeatureService
-from app.admin.payments_router import get_admin_payments_service
-from app.admin.payments_service import AdminPaymentsService
-from app.admin.repository import AdminRepository
+from app.admin.dependencies import AdminCompaniesServiceDep, FeatureServiceDep
 from app.admin.schemas import (
     AdminCompanyDetailRead,
     AdminCompanyFeatureRead,
@@ -22,40 +16,8 @@ from app.admin.schemas import (
     AdminSplitQuotaUpdate,
     AdminSubaccountLinkRead,
 )
-from app.core.dependencies import DbSession
-from app.integrations.relay_service import SelolibertariaRelayService
-from app.integrations.selolibertaria_client import SelolibertariaClient, get_selolibertaria_client
 
 router = APIRouter(prefix="/admin/companies", tags=["admin-companies"])
-
-
-def get_admin_companies_service(
-    db: DbSession,
-    payments_service: Annotated[AdminPaymentsService, Depends(get_admin_payments_service)],
-    relay_client: Annotated[SelolibertariaClient, Depends(get_selolibertaria_client)],
-) -> AdminCompaniesService:
-    link_repository = AsaasSubaccountLinkRepository(db)
-    return AdminCompaniesService(
-        AdminRepository(db),
-        link_repository,
-        payments_service,
-        relay_service=SelolibertariaRelayService(relay_client, link_repository),
-    )
-
-
-AdminCompaniesServiceDep = Annotated[AdminCompaniesService, Depends(get_admin_companies_service)]
-
-
-def get_feature_service(
-    db: DbSession,
-    payments_service: Annotated[AdminPaymentsService, Depends(get_admin_payments_service)],
-) -> FeatureService:
-    return FeatureService(
-        AsaasSubaccountLinkRepository(db), CompanyFeatureRepository(db), payments_service
-    )
-
-
-FeatureServiceDep = Annotated[FeatureService, Depends(get_feature_service)]
 
 
 def _pagination(page: int, page_size: int) -> tuple[int, int, int]:
@@ -75,10 +37,6 @@ def _link_read(link: AsaasSubaccountLink | None) -> AdminSubaccountLinkRead | No
         split_quota_percent=link.split_quota_percent,
         quota_set_by=link.quota_set_by,
         quota_updated_at=link.quota_updated_at,
-        access_token_id=link.access_token_id,
-        key_version=link.key_version,
-        selolibertaria_relay_status=link.selolibertaria_relay_status,
-        selolibertaria_relay_last_error=link.selolibertaria_relay_last_error,
     )
 
 
@@ -113,9 +71,7 @@ async def list_companies(
     )
 
 
-@router.get(
-    "/{company_id}", response_model=AdminCompanyDetailRead, summary="Company detail"
-)
+@router.get("/{company_id}", response_model=AdminCompanyDetailRead, summary="Company detail")
 async def get_company(
     company_id: uuid.UUID, _admin: CurrentAdminAccount, service: AdminCompaniesServiceDep
 ) -> AdminCompanyDetailRead:
@@ -153,7 +109,7 @@ async def set_split_quota(
 @router.post(
     "/{company_id}/link-subaccount",
     response_model=AdminSubaccountLinkRead,
-    summary="Link an existing subaccount, or create and link a new one",
+    summary="Link an existing Asaas subaccount to a company",
 )
 async def link_subaccount(
     company_id: uuid.UUID,
