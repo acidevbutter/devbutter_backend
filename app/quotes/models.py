@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,8 +31,19 @@ class Quote(Base):
         String(20), default="draft"
     )  # draft|approved|edited|rejected
     scope_summary: Mapped[str] = mapped_column(Text)
+    # Line items shown on the quote-detail screen. Free-form strings, ordered.
+    # JSON (not a child table) mirrors conversations.transcript -- it's edited
+    # and read as one blob, never queried across.
+    deliverables: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Marcos-only notes, never shown to the client.
+    internal_notes: Mapped[str | None] = mapped_column(Text, default=None)
     price_range: Mapped[str | None] = mapped_column(String(100), default=None)
     timeline: Mapped[str | None] = mapped_column(String(100), default=None)
+    # ADR-0004: which butter_mind path the visitor chose, and a snapshot of the
+    # collected business profile (segment, city, volume, metrics, ...) so the
+    # admin review queue shows the context without opening the transcript.
+    selected_option_key: Mapped[str | None] = mapped_column(String(64), default=None)
+    business_profile_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id"), default=None)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

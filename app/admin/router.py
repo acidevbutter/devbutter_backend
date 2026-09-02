@@ -199,6 +199,8 @@ async def get_client(
         created_at=account.created_at,
         asaas_customer_id=row["asaas_customer_id"],
         asaas_status="vinculado" if row["asaas_customer_id"] else "nao_vinculado",
+        subaccount_onboarding=row.get("subaccount_onboarding"),
+        subaccount_approval=row.get("subaccount_approval"),
         counts=AdminClientCounts(**row["counts"]),
     )
 
@@ -226,6 +228,9 @@ async def list_admin_orders(
                 status=row["order"].status,
                 amount=row["amount"],
                 created_at=row["order"].created_at,
+                invoices_total=row.get("invoices_total", 0),
+                invoices_paid=row.get("invoices_paid", 0),
+                invoices_overdue=row.get("invoices_overdue", 0),
             )
             for row in rows
         ],

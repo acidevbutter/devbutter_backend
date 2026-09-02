@@ -23,7 +23,7 @@ class ConversationRepository:
     async def append_messages(
         self,
         conversation: Conversation,
-        *messages: dict[str, str],
+        *messages: dict[str, Any],
         ready_to_submit: bool,
         draft_preview: dict[str, Any] | None = None,
     ) -> Conversation:

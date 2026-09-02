@@ -1,3 +1,5 @@
+from typing import Literal
+
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
 
     debug: bool = False
     log_level: str = "INFO"
+    environment: Literal["development", "staging", "preprod", "production"] = "development"
 
     database_url: str = "postgresql+asyncpg://platform:platform@shared-postgres:5432/platform"
 
@@ -63,6 +66,10 @@ class Settings(BaseSettings):
     butter_mind_request_timeout_seconds: float = 30.0
     butter_mind_internal_api_key: str = ""
     butter_mind_service_api_key: str = ""
+
+    # -- conversations: per-IP rate limit for the anonymous concierge funnel
+    # (ADR-0004) so it can't be turned into an open LLM tap. 0 disables it.
+    conversation_rate_limit_per_minute: int = 20
 
     # -- core/clients/relay_client.py: boto3 SQS publish into butter_relay's
     # shared queue. project_id identifies the "devbutter-platform" Project

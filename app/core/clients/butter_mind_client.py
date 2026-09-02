@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
@@ -8,6 +9,7 @@ import httpx
 
 from app.core.decorators import log_call
 from app.core.exceptions import UpstreamServiceError
+from app.core.metrics import emit_metrics, status_class
 from app.settings.config import settings
 
 
@@ -53,10 +55,35 @@ class ButterMindClient:
         )
 
     @log_call
-    async def submit_diagnosis(self, mind_session_id: str) -> dict[str, Any]:
+    async def select_diagnosis_option(
+        self, mind_session_id: str, option_key: str
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/diagnosis/sessions/{mind_session_id}/select-option",
+            json_body={"option_key": option_key},
+            headers=self._service_headers(),
+        )
+
+    @log_call
+    async def patch_diagnosis_business_profile(
+        self, mind_session_id: str, patch: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._request(
+            "PATCH",
+            f"/diagnosis/sessions/{mind_session_id}/business-profile",
+            json_body=patch,
+            headers=self._service_headers(),
+        )
+
+    @log_call
+    async def submit_diagnosis(
+        self, mind_session_id: str, body: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         return await self._request(
             "POST",
             f"/diagnosis/sessions/{mind_session_id}/submit",
+            json_body=body,
             headers=self._service_headers(),
         )
 
@@ -135,18 +162,36 @@ class ButterMindClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
+        started_at = time.perf_counter()
         try:
             response = await self._client.request(
                 method, path, json=json_body, params=params, headers=headers
             )
         except httpx.HTTPError as exc:
+            await self._record_metrics(method, started_at, "error")
             raise UpstreamServiceError(f"butter_mind request failed: {exc}") from exc
         if response.status_code >= 400:
+            await self._record_metrics(method, started_at, status_class(response.status_code))
             raise UpstreamServiceError(
                 f"butter_mind returned {response.status_code} for {method} {path}: {response.text}",
                 status_code=response.status_code,
             )
-        return response.json()
+        try:
+            return response.json()
+        finally:
+            await self._record_metrics(method, started_at, status_class(response.status_code))
+
+    async def _record_metrics(self, operation: str, started_at: float, result: str) -> None:
+        values = [
+            ("UpstreamCallCount", 1, "Count"),
+            ("UpstreamLatency", (time.perf_counter() - started_at) * 1000, "Milliseconds"),
+        ]
+        if result == "error" or result in {"4xx", "5xx"}:
+            values.append(("UpstreamErrorCount", 1, "Count"))
+        await emit_metrics(
+            {"UpstreamService": "butter_mind", "Operation": operation, "StatusClass": result},
+            values,
+        )
 
     async def _internal_request(
         self,

@@ -47,6 +47,10 @@ class AdminClientDetailRead(BaseModel):
     created_at: datetime
     asaas_customer_id: str | None
     asaas_status: Literal["vinculado", "em_analise", "nao_vinculado"]
+    # Layer B merchant subaccount (asaas_subaccount_links) -- raw Asaas
+    # onboarding/approval strings, null when the company has no subaccount.
+    subaccount_onboarding: str | None = None
+    subaccount_approval: str | None = None
     counts: AdminClientCounts
 
 
@@ -58,6 +62,9 @@ class AdminOrderListItem(BaseModel):
     status: str
     amount: Decimal
     created_at: datetime
+    invoices_total: int = 0
+    invoices_paid: int = 0
+    invoices_overdue: int = 0
 
 
 class AdminOrderListRead(BaseModel):

@@ -46,6 +46,8 @@ class QuoteRepository:
         price_range: str | None,
         timeline: str | None,
         conversation_id: uuid.UUID | None = None,
+        selected_option_key: str | None = None,
+        business_profile_snapshot: dict[str, object] | None = None,
     ) -> Quote:
         quote = Quote(
             account_id=account_id,
@@ -55,6 +57,8 @@ class QuoteRepository:
             scope_summary=scope_summary,
             price_range=price_range,
             timeline=timeline,
+            selected_option_key=selected_option_key,
+            business_profile_snapshot=business_profile_snapshot,
         )
         self.session.add(quote)
         await self.session.commit()

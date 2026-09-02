@@ -140,10 +140,26 @@ async def join_conversation(sid, data):
     return {"ok": True}
 
 
+def _clean_selection(raw: object) -> dict | None:
+    """Accept only a well-formed {field: str, option_ids: [str, ...]} from the
+    browser -- anything else is dropped rather than persisted as-is."""
+    if not isinstance(raw, dict):
+        return None
+    field = raw.get("field")
+    option_ids = raw.get("option_ids")
+    if not isinstance(field, str) or not isinstance(option_ids, list):
+        return None
+    ids = [o for o in option_ids if isinstance(o, str)]
+    if not field or not ids:
+        return None
+    return {"field": field, "option_ids": ids}
+
+
 @sio.event
 async def send_message(sid, data):
     raw_conversation_id = data.get("conversation_id")
     content = data.get("content", "")
+    selection = _clean_selection(data.get("selection"))
 
     if raw_conversation_id not in _socket_conversations.get(sid, set()):
         await sio.emit(
@@ -168,7 +184,7 @@ async def send_message(sid, data):
             return
 
         try:
-            async for event in service.stream_message(conversation, content):
+            async for event in service.stream_message(conversation, content, selection):
                 if event["type"] == "delta":
                     await sio.emit("assistant_chunk", {"content": event["content"]}, room=room)
                 elif event["type"] == "done":

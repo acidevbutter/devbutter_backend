@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- Fluxo Cotação IA turno 2 (ADR-0004): `ConversationPreview`/`ConversationTurn`
+  espelham `stage`, `options`, `selected_option_key` e `missing_fields` do
+  butter_mind; novos `POST /conversations/{id}/select-option` e
+  `PATCH /conversations/{id}/business-profile` (passthrough fino, com espelho no
+  transcript/`draft_preview`); `ConversationRateLimitMiddleware` limita por IP as
+  escritas do funil anônimo (`conversation_rate_limit_per_minute`, 0 desliga);
+  `Quote` ganha `selected_option_key` + `business_profile_snapshot` (migração
+  `d5b8e1f4a9c7`), gravados no fechamento e expostos em `QuoteRead` → visíveis na
+  fila de revisão do admin.
+- `ConversationPreview.business_profile` passa a espelhar `city` e `metrics`
+  (`BusinessMetric {label, value, computed}`) do butter_mind, alimentando o
+  dossiê ao vivo da Cotação IA no portal (canvas tela 2a). `draft_preview` já é
+  JSON, então persiste/reidrata sem migração. Ver
+  `docs/architecture/adr-0003-fluxo-cotacao-dossie-portal.md`.
 - Adicionada documentação estática dos fluxos existentes do backend em
   docs/devbutter-backend-fluxos.md e docs/devbutter-backend-fluxos.mmd,
   incluindo forças, falhas, lacunas, pontos de atenção e limites de validação.

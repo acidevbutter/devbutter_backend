@@ -1,16 +1,27 @@
 import hmac
 import uuid
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Header, Request, status
+from sqlalchemy import select
 
 from app.accounts.dependencies import CurrentAdminAccount
+from app.accounts.models import Account, Company
 from app.core.dependencies import DbSession
 from app.core.exceptions import NotFoundError, UnauthorizedError
+from app.invoices.models import Invoice
+from app.orders.models import Order
 from app.settings.config import settings
 from app.webhooks.dependencies import WebhookServiceDep
 from app.webhooks.repository import WebhookEventRepository
-from app.webhooks.schemas import AdminWebhookEventListRead, AdminWebhookEventRead, AsaasWebhookEvent
+from app.webhooks.schemas import (
+    AdminWebhookEventDetailRead,
+    AdminWebhookEventListRead,
+    AdminWebhookEventRead,
+    AsaasWebhookEvent,
+    WebhookAttemptRead,
+    WebhookCorrelationRead,
+)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 admin_router = APIRouter(prefix="/admin/webhooks", tags=["admin-webhooks"])
@@ -65,6 +76,95 @@ async def list_webhook_events(
         page=page,
         page_size=page_size,
         error_count=error_count,
+    )
+
+
+_SENSITIVE_KEYS = ("customer", "wallet", "apikey", "accesstoken", "token", "cpfcnpj")
+
+
+def _mask_payload(value: object) -> object:
+    """Redact obviously-identifying values before the payload reaches the
+    drawer (artboard 1r labels it "payload (redigido)")."""
+    if isinstance(value, dict):
+        out: dict[str, object] = {}
+        for key, val in value.items():
+            if isinstance(val, str) and any(
+                s in key.lower() for s in _SENSITIVE_KEYS
+            ):
+                out[key] = f"****{val[-4:]}" if len(val) > 4 else "****"
+            else:
+                out[key] = _mask_payload(val)
+        return out
+    if isinstance(value, list):
+        return [_mask_payload(v) for v in value]
+    return value
+
+
+@admin_router.get("/events/{event_id}", response_model=AdminWebhookEventDetailRead)
+async def get_webhook_event(
+    event_id: uuid.UUID,
+    _admin: CurrentAdminAccount,
+    db: DbSession,
+) -> AdminWebhookEventDetailRead:
+    event = await WebhookEventRepository(db).get(event_id)
+    if event is None:
+        raise NotFoundError("Webhook event not found")
+
+    # We keep a single audit row per delivery (received_at + processed_at),
+    # not a per-retry log -- reconstruct the attempt line from those two.
+    attempts: list[WebhookAttemptRead] = [
+        WebhookAttemptRead(at=event.received_at, result="recebido")
+    ]
+    if event.processed_at is not None:
+        attempts.append(
+            WebhookAttemptRead(
+                at=event.processed_at,
+                result="ok" if event.processed_ok else "erro",
+            )
+        )
+
+    correlation: list[WebhookCorrelationRead] = []
+    if event.related_invoice_id is not None:
+        row = (
+            await db.execute(
+                select(Invoice, Order, Company.name)
+                .join(Order, Order.id == Invoice.order_id)
+                .join(Account, Account.id == Order.account_id)
+                .join(Company, Company.id == Account.company_id)
+                .where(Invoice.id == event.related_invoice_id)
+            )
+        ).one_or_none()
+        if row is not None:
+            invoice, order, company_name = row
+            correlation.append(
+                WebhookCorrelationRead(kind="client", label=company_name, href=None)
+            )
+            correlation.append(
+                WebhookCorrelationRead(
+                    kind="invoice",
+                    label=f"inv {str(invoice.id)[:8]}",
+                    href="/admin/invoices",
+                )
+            )
+            correlation.append(
+                WebhookCorrelationRead(
+                    kind="order",
+                    label=f"order {str(order.id)[:8]}",
+                    href=f"/admin/orders/{order.id}",
+                )
+            )
+
+    return AdminWebhookEventDetailRead(
+        id=event.id,
+        event_type=event.event_type,
+        related_invoice_id=event.related_invoice_id,
+        processed_ok=event.processed_ok,
+        error_message=event.error_message,
+        payload=cast(dict[str, Any], _mask_payload(event.payload)),
+        received_at=event.received_at,
+        processed_at=event.processed_at,
+        attempts=attempts,
+        correlation=correlation,
     )
 
 

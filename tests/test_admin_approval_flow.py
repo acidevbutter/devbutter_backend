@@ -201,6 +201,19 @@ async def test_asaas_webhook_updates_invoice_status_idempotently(
     assert events.json()["error_count"] == 0
     event_id = events.json()["items"][0]["id"]
 
+    detail = await client.get(
+        f"/admin/webhooks/events/{event_id}",
+        headers=auth_headers(admin_tokens),
+    )
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    # "recebido" line is always present; a processed event adds an "ok" line.
+    assert detail_body["attempts"][0]["result"] == "recebido"
+    assert detail_body["attempts"][-1]["result"] == "ok"
+    # related_invoice_id set -> client / invoice / order correlation chips.
+    kinds = {c["kind"] for c in detail_body["correlation"]}
+    assert kinds == {"client", "invoice", "order"}
+
     reprocess = await client.post(
         f"/admin/webhooks/events/{event_id}/reprocess",
         headers=auth_headers(admin_tokens),

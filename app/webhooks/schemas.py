@@ -47,3 +47,23 @@ class AdminWebhookEventListRead(BaseModel):
     page: int
     page_size: int
     error_count: int
+
+
+class WebhookAttemptRead(BaseModel):
+    at: datetime
+    result: str  # "ok" | "erro" | "recebido"
+
+
+class WebhookCorrelationRead(BaseModel):
+    kind: str  # "client" | "invoice" | "order"
+    label: str
+    href: str | None = None
+
+
+class AdminWebhookEventDetailRead(AdminWebhookEventRead):
+    """Drawer view (artboard 1r): the audit row plus the entities it touched
+    and the processing attempts we can reconstruct from its timestamps."""
+
+    processed_at: datetime | None = None
+    attempts: list[WebhookAttemptRead] = []
+    correlation: list[WebhookCorrelationRead] = []

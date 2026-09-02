@@ -6,8 +6,20 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db_session
 from app.main import app
+from app.settings.config import settings
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture(autouse=True)
+def _disable_conversation_rate_limit():
+    """The whole suite shares one ASGI client IP ("testclient"), so the
+    per-IP concierge rate limiter (ADR-0004) would trip after a few dozen
+    conversation calls. Off by default; the dedicated test re-enables it."""
+    original = settings.conversation_rate_limit_per_minute
+    settings.conversation_rate_limit_per_minute = 0
+    yield
+    settings.conversation_rate_limit_per_minute = original
 
 
 @pytest.fixture
