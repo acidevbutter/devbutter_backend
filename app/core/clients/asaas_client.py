@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import httpx
 
 from app.core.decorators import log_call
 from app.core.exceptions import UpstreamServiceError
+from app.core.metrics import emit_metrics, status_class
 from app.settings.config import settings
 
 # Asaas occasionally 502s transiently (its own upstream, not asaas_payment
@@ -202,6 +204,7 @@ class AsaasClient:
         retry_on_502: bool = True,
         timeout: float | None = None,
     ) -> Any:
+        started_at = time.perf_counter()
         attempt = 0
         while True:
             attempt += 1
@@ -211,6 +214,7 @@ class AsaasClient:
                     request_kwargs["timeout"] = timeout
                 response = await self._client.request(method, path, **request_kwargs)
             except httpx.HTTPError as exc:
+                await self._record_metrics(method, started_at, "error")
                 raise UpstreamServiceError(f"asaas_payment request failed: {exc}") from exc
 
             if (
@@ -222,12 +226,29 @@ class AsaasClient:
                 continue
 
             if response.status_code >= 400:
+                await self._record_metrics(method, started_at, status_class(response.status_code))
                 raise UpstreamServiceError(
                     f"asaas_payment returned {response.status_code} for {method} {path}"
                 )
             if not response.content:
+                await self._record_metrics(method, started_at, status_class(response.status_code))
                 return {}
-            return response.json()
+            try:
+                return response.json()
+            finally:
+                await self._record_metrics(method, started_at, status_class(response.status_code))
+
+    async def _record_metrics(self, operation: str, started_at: float, result: str) -> None:
+        values = [
+            ("UpstreamCallCount", 1, "Count"),
+            ("UpstreamLatency", (time.perf_counter() - started_at) * 1000, "Milliseconds"),
+        ]
+        if result == "error" or result in {"4xx", "5xx"}:
+            values.append(("UpstreamErrorCount", 1, "Count"))
+        await emit_metrics(
+            {"UpstreamService": "asaas_payment", "Operation": operation, "StatusClass": result},
+            values,
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

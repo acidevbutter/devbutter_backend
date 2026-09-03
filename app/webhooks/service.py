@@ -3,6 +3,7 @@ from typing import Any
 from app.accounts.repository import AccountRepository
 from app.core.decorators import log_errors
 from app.core.exceptions import NotFoundError
+from app.core.metrics import emit_metrics
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
@@ -50,6 +51,7 @@ class WebhookService:
     async def process_event(
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
     ) -> WebhookEvent:
+        await emit_metrics({"EventType": event.event}, [("WebhookReceived", 1, "Count")])
         invoice = (
             await self.invoice_repository.get_by_asaas_invoice_id(event.payment.id)
             if event.payment is not None
@@ -63,20 +65,26 @@ class WebhookService:
         try:
             await self._dispatch(event)
         except Exception as exc:
+            await emit_metrics({"EventType": event.event}, [("WebhookFailed", 1, "Count")])
             detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
             await self.event_repository.mark_failed(audit_event, detail)
             raise
-        return await self.event_repository.mark_processed(audit_event)
+        processed = await self.event_repository.mark_processed(audit_event)
+        await emit_metrics({"EventType": event.event}, [("WebhookProcessed", 1, "Count")])
+        return processed
 
     async def reprocess_event(self, audit_event: WebhookEvent) -> WebhookEvent:
         event = AsaasWebhookEvent.model_validate(audit_event.payload)
         try:
             await self._dispatch(event)
         except Exception as exc:
+            await emit_metrics({"EventType": event.event}, [("WebhookFailed", 1, "Count")])
             detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
             await self.event_repository.mark_failed(audit_event, detail)
             raise
-        return await self.event_repository.mark_processed(audit_event)
+        processed = await self.event_repository.mark_processed(audit_event)
+        await emit_metrics({"EventType": event.event}, [("WebhookProcessed", 1, "Count")])
+        return processed
 
     async def _dispatch(self, event: AsaasWebhookEvent) -> None:
         """PAYMENT_* events go through the Invoice/Order reconciliation

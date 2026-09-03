@@ -52,8 +52,21 @@ class ConversationService:
             new_id = await self._provision_mind_session(conversation)
             return await call(new_id)
 
+    @staticmethod
+    def _user_turn(content: str, selection: dict[str, Any] | None) -> dict[str, Any]:
+        """The user's transcript entry. `selection` (field + option_ids) is
+        attached verbatim when the visitor answered by tapping option chips --
+        it's persistence/audit only; butter_mind only ever gets `content`."""
+        entry: dict[str, Any] = {"role": "user", "content": content}
+        if selection:
+            entry["selected"] = selection
+        return entry
+
     async def send_message(
-        self, conversation: Conversation, content: str
+        self,
+        conversation: Conversation,
+        content: str,
+        selection: dict[str, Any] | None = None,
     ) -> tuple[str, bool, dict[str, Any] | None]:
         turn = await self._with_mind_session(
             conversation, lambda sid: self.mind_client.send_diagnosis_message(sid, content)
@@ -63,8 +76,58 @@ class ConversationService:
         preview = turn.get("preview")
         await self.repository.append_messages(
             conversation,
-            {"role": "user", "content": content},
+            self._user_turn(content, selection),
             {"role": "assistant", "content": reply},
+            ready_to_submit=ready_to_submit,
+            draft_preview=preview,
+        )
+        return reply, ready_to_submit, preview
+
+    async def select_option(
+        self, conversation: Conversation, option_key: str
+    ) -> tuple[str, bool, dict[str, Any] | None]:
+        """The visitor picked one of the proposed paths (ADR-0004). Relays to
+        butter_mind, mirrors the choice + confirmation into the local
+        transcript, and re-persists the preview."""
+        turn = await self._with_mind_session(
+            conversation,
+            lambda sid: self.mind_client.select_diagnosis_option(sid, option_key),
+        )
+        reply = turn["message"]["content"]
+        ready_to_submit = turn["ready_to_submit"]
+        preview = turn.get("preview")
+        chosen = next(
+            (o for o in (preview or {}).get("options", []) if o.get("key") == option_key),
+            {"title": option_key},
+        )
+        await self.repository.append_messages(
+            conversation,
+            {
+                "role": "user",
+                "content": f"Escolhi: {chosen.get('title')}",
+                "selected_option_key": option_key,
+            },
+            {"role": "assistant", "content": reply},
+            ready_to_submit=ready_to_submit,
+            draft_preview=preview,
+        )
+        return reply, ready_to_submit, preview
+
+    async def patch_business_profile(
+        self, conversation: Conversation, patch: dict[str, Any]
+    ) -> tuple[str, bool, dict[str, Any] | None]:
+        """Merge the collecting-step fields (ADR-0004). No transcript entry --
+        this is a form edit, not a chat turn -- but the preview is re-persisted
+        so a resumed chat re-renders the updated stage/missing_fields."""
+        turn = await self._with_mind_session(
+            conversation,
+            lambda sid: self.mind_client.patch_diagnosis_business_profile(sid, patch),
+        )
+        reply = turn["message"]["content"]
+        ready_to_submit = turn["ready_to_submit"]
+        preview = turn.get("preview")
+        await self.repository.append_messages(
+            conversation,
             ready_to_submit=ready_to_submit,
             draft_preview=preview,
         )
@@ -98,7 +161,10 @@ class ConversationService:
             return _NO_EVENT
 
     async def stream_message(
-        self, conversation: Conversation, content: str
+        self,
+        conversation: Conversation,
+        content: str,
+        selection: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Same persistence as send_message, but relays butter_mind's streamed
         reply chunk by chunk -- used by the Socket.IO `send_message` handler.
@@ -120,7 +186,7 @@ class ConversationService:
             elif event["type"] == "done":
                 await self.repository.append_messages(
                     conversation,
-                    {"role": "user", "content": content},
+                    self._user_turn(content, selection),
                     {"role": "assistant", "content": full_reply},
                     ready_to_submit=event["ready_to_submit"],
                     draft_preview=event.get("preview"),

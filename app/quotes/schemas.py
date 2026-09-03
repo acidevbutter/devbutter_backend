@@ -13,6 +13,8 @@ class QuoteManualCreate(BaseModel):
 
 class QuoteEdit(BaseModel):
     scope_summary: str | None = None
+    deliverables: list[str] | None = None
+    internal_notes: str | None = None
     price_range: str | None = None
     timeline: str | None = None
 
@@ -27,8 +29,14 @@ class QuoteRead(BaseModel):
     source: str
     status: str
     scope_summary: str
+    deliverables: list[str]
+    internal_notes: str | None
     price_range: str | None
     timeline: str | None
+    # ADR-0004: populated for AI quotes from the turno-2 flow. Shown in the
+    # admin review queue so Marcos sees the chosen path + business context.
+    selected_option_key: str | None = None
+    business_profile_snapshot: dict | None = None
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None
     created_at: datetime

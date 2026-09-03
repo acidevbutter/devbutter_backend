@@ -36,6 +36,10 @@ class QuoteService:
             price_range=extraction.get("budget_range"),
             timeline=extraction.get("timeline"),
             conversation_id=conversation_id,
+            # ADR-0004: carried straight from butter_mind's submit response so
+            # the admin review queue shows the chosen path + business context.
+            selected_option_key=extraction.get("selected_option_key"),
+            business_profile_snapshot=extraction.get("business_profile") or None,
         )
 
     async def get(self, quote_id: uuid.UUID) -> Quote:

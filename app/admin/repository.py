@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.models import Account, AsaasCustomerLink, AsaasSubaccountLink, Company, User
@@ -71,16 +71,31 @@ class AdminRepository:
 
     async def get_client(self, account_id: uuid.UUID) -> dict[str, Any] | None:
         result = await self.session.execute(
-            select(Account, Company, User, AsaasCustomerLink.asaas_customer_id)
+            select(
+                Account,
+                Company,
+                User,
+                AsaasCustomerLink.asaas_customer_id,
+                AsaasSubaccountLink.onboarding_status,
+                AsaasSubaccountLink.approval_status,
+            )
             .join(Company, Company.id == Account.company_id)
             .join(User, User.id == Company.user_id)
             .outerjoin(AsaasCustomerLink, AsaasCustomerLink.company_id == Company.id)
+            .outerjoin(AsaasSubaccountLink, AsaasSubaccountLink.company_id == Company.id)
             .where(Account.id == account_id)
         )
         row = result.one_or_none()
         if row is None:
             return None
-        account, company, user, asaas_customer_id = row
+        (
+            account,
+            company,
+            user,
+            asaas_customer_id,
+            subaccount_onboarding,
+            subaccount_approval,
+        ) = row
         counts = {
             "quotes": await self._count(Quote, Quote.account_id == account_id),
             "orders": await self._count(Order, Order.account_id == account_id),
@@ -102,6 +117,8 @@ class AdminRepository:
             "company": company,
             "user": user,
             "asaas_customer_id": asaas_customer_id,
+            "subaccount_onboarding": subaccount_onboarding,
+            "subaccount_approval": subaccount_approval,
             "counts": counts,
         }
 
@@ -113,11 +130,20 @@ class AdminRepository:
         offset: int,
         limit: int,
     ) -> tuple[list[dict[str, Any]], int]:
+        # Per-order invoice roll-up for the list screen's "faturado" bar.
+        # "paid" folds every Asaas status _STATUS_MAP resolves to PAID.
+        paid_expr = func.sum(
+            case((Invoice.status.in_(("PAID", "RECEIVED", "CONFIRMED")), 1), else_=0)
+        )
+        overdue_expr = func.sum(case((Invoice.status == "OVERDUE", 1), else_=0))
         query = (
             select(
                 Order,
                 Company.name,
                 func.coalesce(func.sum(Invoice.amount), Decimal("0")),
+                func.count(Invoice.id),
+                func.coalesce(paid_expr, 0),
+                func.coalesce(overdue_expr, 0),
             )
             .join(Account, Account.id == Order.account_id)
             .join(Company, Company.id == Account.company_id)
@@ -144,8 +170,18 @@ class AdminRepository:
                 "order": order,
                 "account_name": account_name,
                 "amount": amount,
+                "invoices_total": int(invoices_total),
+                "invoices_paid": int(invoices_paid),
+                "invoices_overdue": int(invoices_overdue),
             }
-            for order, account_name, amount in result.all()
+            for (
+                order,
+                account_name,
+                amount,
+                invoices_total,
+                invoices_paid,
+                invoices_overdue,
+            ) in result.all()
         ], total
 
     async def list_invoices(

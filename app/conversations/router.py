@@ -6,11 +6,13 @@ from app.accounts.dependencies import AccountServiceDep, OptionalCurrentAccount
 from app.conversations.dependencies import ConversationServiceDep
 from app.conversations.models import Conversation
 from app.conversations.schemas import (
+    BusinessProfilePatch,
     ConversationMessageCreate,
     ConversationRead,
     ConversationTurn,
     DraftQuoteFromConversation,
     DraftQuoteRequest,
+    SelectOptionRequest,
 )
 from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.notifications.dependencies import NotificationServiceDep
@@ -69,7 +71,47 @@ async def send_message(
     service: ConversationServiceDep,
 ) -> ConversationTurn:
     conversation = await _get_owned_conversation(conversation_id, account, service)
-    reply, ready_to_submit, preview = await service.send_message(conversation, payload.content)
+    selection = payload.selection.model_dump() if payload.selection else None
+    reply, ready_to_submit, preview = await service.send_message(
+        conversation, payload.content, selection
+    )
+    return ConversationTurn(reply=reply, ready_to_submit=ready_to_submit, preview=preview)
+
+
+@router.post(
+    "/{conversation_id}/select-option",
+    response_model=ConversationTurn,
+    status_code=status.HTTP_201_CREATED,
+    summary="Pick one of the proposed paths (ADR-0004)",
+)
+async def select_option(
+    conversation_id: uuid.UUID,
+    payload: SelectOptionRequest,
+    account: OptionalCurrentAccount,
+    service: ConversationServiceDep,
+) -> ConversationTurn:
+    conversation = await _get_owned_conversation(conversation_id, account, service)
+    reply, ready_to_submit, preview = await service.select_option(
+        conversation, payload.option_key
+    )
+    return ConversationTurn(reply=reply, ready_to_submit=ready_to_submit, preview=preview)
+
+
+@router.patch(
+    "/{conversation_id}/business-profile",
+    response_model=ConversationTurn,
+    summary="Merge collected business-profile fields (ADR-0004)",
+)
+async def patch_business_profile(
+    conversation_id: uuid.UUID,
+    payload: BusinessProfilePatch,
+    account: OptionalCurrentAccount,
+    service: ConversationServiceDep,
+) -> ConversationTurn:
+    conversation = await _get_owned_conversation(conversation_id, account, service)
+    reply, ready_to_submit, preview = await service.patch_business_profile(
+        conversation, payload.model_dump(exclude_unset=True)
+    )
     return ConversationTurn(reply=reply, ready_to_submit=ready_to_submit, preview=preview)
 
 
@@ -86,8 +128,9 @@ async def draft_quote(
     quote_service: QuoteServiceDep,
     account_service: AccountServiceDep,
     notification_service: NotificationServiceDep,
-    payload: DraftQuoteRequest = DraftQuoteRequest(),
+    payload: DraftQuoteRequest | None = None,
 ) -> DraftQuoteFromConversation:
+    payload = payload or DraftQuoteRequest()
     conversation = await _get_owned_conversation(conversation_id, account, conversation_service)
     if not conversation.ready_to_submit:
         raise ValidationFailedError(
@@ -98,6 +141,20 @@ async def draft_quote(
         extraction["contact_email"] = payload.email
     if payload.phone:
         extraction["contact_phone"] = payload.phone
+    if payload.contact_name:
+        extraction["contact_name"] = payload.contact_name
+    # An explicit "" (the "não tenho empresa" toggle on canvas 1e) clears the
+    # conversationally-detected company; a real value overrides it.
+    if payload.contact_company is not None:
+        extraction["company_name"] = payload.contact_company or None
+    # Structured edits the visitor made on the checkbox/radio review step
+    # (canvas 1d-1e) win over the conversational extraction for these fields.
+    if payload.services_of_interest is not None:
+        extraction["services_of_interest"] = payload.services_of_interest
+    if payload.budget_range is not None:
+        extraction["budget_range"] = payload.budget_range
+    if payload.timeline is not None:
+        extraction["timeline"] = payload.timeline
 
     account_id = conversation.account_id
     tokens = None

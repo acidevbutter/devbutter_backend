@@ -94,17 +94,26 @@ async def test_admin_cross_account_views_and_account_invoices(
 
     detail_response = await client.get(f"/admin/clients/{client_id}", headers=headers)
     assert detail_response.status_code == 200
-    assert detail_response.json()["counts"] == {
+    detail_body = detail_response.json()
+    assert detail_body["counts"] == {
         "quotes": 1,
         "orders": 1,
         "invoices": 1,
         "catalog_entries": 1,
         "conversations": 1,
     }
+    # No Layer B subaccount linked to this company yet.
+    assert detail_body["subaccount_onboarding"] is None
+    assert detail_body["subaccount_approval"] is None
 
     orders_response = await client.get("/admin/orders", headers=headers)
     assert orders_response.status_code == 200
-    assert orders_response.json()["items"][0]["amount"] == "1200.00"
+    order_item = orders_response.json()["items"][0]
+    assert order_item["amount"] == "1200.00"
+    # One PENDING invoice -> total 1, none paid, none overdue.
+    assert order_item["invoices_total"] == 1
+    assert order_item["invoices_paid"] == 0
+    assert order_item["invoices_overdue"] == 0
 
     invoices_response = await client.get("/admin/invoices", headers=headers)
     assert invoices_response.status_code == 200

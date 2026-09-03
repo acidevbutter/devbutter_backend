@@ -11,6 +11,7 @@ from app.accounts.service import AccountService
 from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
 from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.metrics import emit_metrics
 from app.core.security import InvalidTokenError, TokenType, decode_token
 from app.notifications.service import NotificationService
 
@@ -45,10 +46,12 @@ async def get_authenticated_context(
     service: AccountServiceDep,
 ) -> AuthenticatedContext:
     if credentials is None:
+        await emit_metrics({"Reason": "missing_bearer_token"}, [("AuthFailure", 1, "Count")])
         raise UnauthorizedError("Missing bearer token")
     try:
         claims = decode_token(credentials.credentials, TokenType.ACCESS)
     except InvalidTokenError as exc:
+        await emit_metrics({"Reason": "invalid_token"}, [("AuthFailure", 1, "Count")])
         raise UnauthorizedError(str(exc)) from exc
     user = await service.get_user(claims.user_id)
     account = await service.get_account_for_user(claims.account_id, claims.user_id)
@@ -60,6 +63,9 @@ async def get_authenticated_context(
         or account is None
         or company is None
     ):
+        await emit_metrics(
+            {"Reason": "inactive_or_session_invalid"}, [("AuthFailure", 1, "Count")]
+        )
         raise UnauthorizedError("User or selected account is no longer active")
     return AuthenticatedContext(user, company, account)
 

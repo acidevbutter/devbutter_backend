@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 
 import socketio
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.accounts.router import router as accounts_router
 from app.admin.companies_router import router as admin_companies_router
@@ -14,6 +16,8 @@ from app.conversations.socket_server import sio
 from app.core.clients.asaas_client import close_asaas_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
+from app.core.metrics import configure_metrics, emit_metrics
+from app.db.session import engine
 from app.invoices.router import account_router as account_invoices_router
 from app.invoices.router import router as invoices_router
 from app.knowledge.router import router as knowledge_router
@@ -28,6 +32,7 @@ from app.webhooks.router import admin_router as admin_webhooks_router
 from app.webhooks.router import router as webhooks_router
 
 setup_logging(settings.log_level)
+configure_metrics()
 
 
 @asynccontextmanager
@@ -68,6 +73,17 @@ app.include_router(knowledge_router)
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["meta"], response_model=None)
+async def readiness() -> dict[str, str] | JSONResponse:
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    except Exception:
+        await emit_metrics({}, [("HealthCheckFailure", 1, "Count")])
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return {"status": "ready"}
 
 
 # ASGI app actually served at runtime: mounts the Socket.IO server (real-time
