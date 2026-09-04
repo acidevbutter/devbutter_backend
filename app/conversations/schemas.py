@@ -40,97 +40,18 @@ class ConversationMessageCreate(BaseModel):
     selection: SelectionMeta | None = None
 
 
-class NextStepOption(BaseModel):
-    id: str
-    label: str
-
-
-class NextStep(BaseModel):
-    """Passthrough of butter_mind's structured "pick one/some" block for the
-    current qualification turn -- devbutter_platform does not interpret the
-    option ids, it only relays this to the browser and persists it in
-    Conversation.draft_preview so a resumed chat can re-render the options."""
-
-    prompt: str
-    field: str
-    selection_mode: str
-    allow_free_text: bool = True
-    options: list[NextStepOption]
-
-
-class BusinessMetric(BaseModel):
-    """Passthrough of one butter_mind "números do negócio" stat (Fluxo Cotação
-    IA, canvas screen 2a). `value` is free text; `computed` marks a figure the
-    AI derived rather than one the visitor stated."""
-
-    label: str
-    value: str
-    computed: bool = False
-
-
-class BusinessProfile(BaseModel):
-    """Passthrough of butter_mind's live business profile for the chat's chip
-    row (canvas screen 1c) and the portal's live dossiê (canvas screen 2a).
-    devbutter_platform does not interpret it -- it relays it to the browser and
-    persists it verbatim in Conversation.draft_preview so a resumed chat
-    re-renders the same chips/dossiê."""
-
-    company_name: str | None = None
-    is_legal_entity: bool | None = None
-    segment: str | None = None
-    city: str | None = None
-    volume: str | None = None
-    metrics: list[BusinessMetric] = []
-    pain_points: list[str] = []
-    scope_modules: list[str] = []
-    contact_ready: bool = False
-
-
-class QualificationProgress(BaseModel):
-    answered: int
-    total: int
-
-
-class ProductOption(BaseModel):
-    """Passthrough of one butter_mind proposed path (ADR-0004). devbutter does
-    not interpret the key -- it relays the card and the chosen key back."""
-
-    key: str
-    title: str
-    summary: str
-    price_range: str | None = None
-    timeline: str | None = None
-    recommended: bool = False
-
-
-class ConversationPreview(BaseModel):
-    problem_summary: str
-    services_of_interest: list[str]
-    budget_range: str | None = None
-    timeline: str | None = None
-    missing_information: list[str]
-    grounding_status: str
-    next_step: NextStep | None = None
-    # Live qualification state (canvas screen 1c). Optional so a preview
-    # produced by an older butter_mind still validates.
-    business_profile: BusinessProfile | None = None
-    progress: QualificationProgress | None = None
-    # ADR-0004 turno-2: stage machine + proposed/chosen paths.
-    stage: str = "qualifying"
-    options: list[ProductOption] = []
-    selected_option_key: str | None = None
-    missing_fields: list[str] = []
-    # Passthrough of butter_mind's _OPTION_CATALOG for the fields the review
-    # step edits (canvas 1d-1e): "services_of_interest", "budget_range",
-    # "timeline". The browser renders the review checkboxes/pills from this
-    # instead of a hardcoded copy. Empty from an older butter_mind.
-    field_options: dict[str, list[NextStepOption]] = {}
-
-
 class ConversationTurn(BaseModel):
+    """`preview` is butter_mind's diagnosis preview, relayed **verbatim**.
+    devbutter_platform is a pure passthrough for it -- it never interprets or
+    reshapes the preview, only persists it in `Conversation.draft_preview` and
+    forwards it to the browser. The canonical shape lives in ONE place:
+    butter_mind `app/diagnosis/schemas.py::DiagnosisPreview` (snapshot in
+    `contracts/conversation_state.schema.json` there). Re-declaring it here was
+    a third hand-maintained copy that drifted -- see ADR-0005."""
+
     reply: str
     ready_to_submit: bool
-    preview: ConversationPreview | None = None
+    preview: dict[str, Any] | None = None
 
 
 class SelectOptionRequest(BaseModel):
