@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Adicionada imagem AWS isolada (`Dockerfile.aws`), executada pelo usuário sem
+  privilégios `app` (UID 10001), e seu contexto específico de build, que exclui
+  `.env`, certificados e chaves. O Dockerfile e Compose de desenvolvimento
+  permanecem inalterados.
 - Fluxo Cotação IA turno 2 (ADR-0004): `ConversationPreview`/`ConversationTurn`
   espelham `stage`, `options`, `selected_option_key` e `missing_fields` do
   butter_mind; novos `POST /conversations/{id}/select-option` e
