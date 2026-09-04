@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Fluxo Cotação IA — `ConversationTurn.preview` vira passthrough puro (ADR-0005):
+  removidos `ConversationPreview` + submodelos (`NextStep`, `ProductOption`,
+  `BusinessProfile`, `QualificationProgress`, `BusinessMetric`,
+  `NextStepOption`) — eram a 3ª cópia à mão da forma do preview do butter_mind e
+  driftavam. `preview` agora é `dict[str, Any]`, relaiado verbatim (como
+  `draft_preview` e o path de socket já eram). Fonte única: butter_mind
+  `DiagnosisPreview` (snapshot em `butter_mind/contracts/conversation_state.schema.json`).
+- `ConversationPreview.field_options` (antes de virar passthrough): passthrough
+  do `_OPTION_CATALOG` do butter_mind para a etapa de review do chat.
 - Fluxo Cotação IA turno 2 (ADR-0004): `ConversationPreview`/`ConversationTurn`
   espelham `stage`, `options`, `selected_option_key` e `missing_fields` do
   butter_mind; novos `POST /conversations/{id}/select-option` e
