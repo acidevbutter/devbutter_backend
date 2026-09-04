@@ -120,6 +120,11 @@ class ConversationPreview(BaseModel):
     options: list[ProductOption] = []
     selected_option_key: str | None = None
     missing_fields: list[str] = []
+    # Passthrough of butter_mind's _OPTION_CATALOG for the fields the review
+    # step edits (canvas 1d-1e): "services_of_interest", "budget_range",
+    # "timeline". The browser renders the review checkboxes/pills from this
+    # instead of a hardcoded copy. Empty from an older butter_mind.
+    field_options: dict[str, list[NextStepOption]] = {}
 
 
 class ConversationTurn(BaseModel):
