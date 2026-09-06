@@ -1,0 +1,204 @@
+flowchart LR
+    Client[Frontend / cliente]
+    Admin[Portal admin]
+    API[DevButter Backend - FastAPI]
+    DB[(PostgreSQL)]
+    Mind[butter_mind - HTTP / SSE]
+    Relay[butter_relay - e-mail / SQS]
+    Asaas[Asaas]
+    AsaasClient[asaas_payment - mTLS]
+    Socket[Socket.IO / ASGI]
+
+    Client -->|JWT / HTTP| API
+    Client -->|httpOnly cookie| Socket
+    Admin -->|JWT admin / HTTP| API
+    Socket --> API
+    API --> DB
+    API --> Mind
+    API --> Relay
+    API --> AsaasClient
+    AsaasClient --> Asaas
+    Asaas -->|asaas-access-token| API
+
+    subgraph Meta["Meta e saude"]
+        H1["GET /health"]
+        H2["GET /health/ready"]
+    end
+    API --> Meta
+
+    subgraph Accounts["Contas e identidade - /accounts"]
+        A1["POST /accounts/signup"]
+        A2["POST /accounts/login"]
+        A3["POST /accounts/refresh"]
+        A4["GET /accounts/password-setup/{token}"]
+        A5["POST /accounts/password-setup"]
+        A6["POST /accounts/password-recovery"]
+        A7["GET /accounts/password-recovery/{token}"]
+        A8["POST /accounts/password-recovery/complete"]
+        A9["GET /accounts/me"]
+        A10["PATCH /accounts/me"]
+        A11["GET /accounts"]
+        A12["POST /accounts"]
+        A13["GET /accounts/companies"]
+        A14["POST /accounts/companies"]
+        A15["POST /accounts/select"]
+    end
+    API --> Accounts
+    Accounts -->|links de recuperacao| Relay
+
+    subgraph Conversations["Conversas - /conversations"]
+        C1["POST /conversations"]
+        C2["GET /conversations/{conversation_id}"]
+        C3["POST /conversations/{conversation_id}/messages"]
+        C4["POST /conversations/{conversation_id}/select-option"]
+        C5["PATCH /conversations/{conversation_id}/business-profile"]
+        C6["POST /conversations/{conversation_id}/draft-quote"]
+    end
+    API --> Conversations
+    Conversations --> Mind
+    Conversations --> DB
+    Conversations -->|cria cotacao e notifica| Relay
+
+    subgraph Quotes["Cotacoes - /quotes"]
+        Q1["GET /quotes"]
+        Q2["GET /quotes/{quote_id}"]
+        Q3["POST /quotes/manual"]
+    end
+    API --> Quotes
+    Quotes --> DB
+
+    subgraph Orders["Pedidos - /orders"]
+        O1["GET /orders"]
+        O2["GET /orders/{order_id}"]
+    end
+    API --> Orders
+    Orders --> DB
+
+    subgraph Invoices["Faturas"]
+        I1["GET /orders/{order_id}/invoices"]
+        I2["GET /invoices"]
+    end
+    API --> Invoices
+    Invoices --> DB
+
+    subgraph Payments["Metodos de pagamento e cobrancas"]
+        P1["POST /payment-methods/session"]
+        P2["POST /payment-methods"]
+        P3["GET /payment-methods"]
+        P4["DELETE /payment-methods/{payment_method_id}"]
+        P5["POST /payments"]
+        P6["POST /admin/payment-methods/reconcile"]
+    end
+    API --> Payments
+    Payments --> DB
+    Payments --> AsaasClient
+
+    subgraph Catalog["Catalogo de servicos - /service-catalog"]
+        S1["GET /service-catalog"]
+        S2["POST /service-catalog"]
+        S3["PATCH /service-catalog/{entry_id}"]
+        S4["DELETE /service-catalog/{entry_id}"]
+    end
+    API --> Catalog
+    Catalog --> DB
+
+    subgraph Webhooks["Webhooks e auditoria"]
+        W1["POST /webhooks/asaas"]
+        W2["GET /admin/webhooks/events"]
+        W3["GET /admin/webhooks/events/{event_id}"]
+        W4["POST /admin/webhooks/events/{event_id}/reprocess"]
+    end
+    Asaas --> W1
+    API --> Webhooks
+    Webhooks --> DB
+    W1 -->|atualiza fatura / pedido| DB
+
+    subgraph AdminRead["Admin - consultas e operacao"]
+        R1["GET /admin/mind/overview"]
+        R2["GET /admin/mind/settings"]
+        R3["PATCH /admin/mind/settings"]
+        R4["GET /admin/mind/usage"]
+        R5["GET /admin/mind/budgets/{flow}"]
+        R6["PUT /admin/mind/budgets/{flow}"]
+        R7["GET /admin/mind/conversations/{conversation_id}/turn-metrics"]
+        R8["GET /admin/quotes"]
+        R9["GET /admin/quotes/all"]
+        R10["GET /admin/clients"]
+        R11["GET /admin/clients/{account_id}"]
+        R12["GET /admin/orders"]
+        R13["GET /admin/invoices"]
+        R14["GET /admin/dashboard"]
+        R15["GET /admin/catalog"]
+        R16["GET /admin/conversations"]
+        R17["GET /admin/conversations/{conversation_id}"]
+        R18["PATCH /admin/quotes/{quote_id}"]
+        R19["POST /admin/quotes/{quote_id}/reject"]
+        R20["POST /admin/quotes/{quote_id}/approve"]
+    end
+    Admin --> AdminRead
+    AdminRead --> DB
+    AdminRead --> Mind
+    AdminRead --> AsaasClient
+
+    subgraph AdminCompanies["Admin - empresas - /admin/companies"]
+        Cmp1["GET /admin/companies"]
+        Cmp2["GET /admin/companies/{company_id}"]
+        Cmp3["PATCH /admin/companies/{company_id}/split-quota"]
+        Cmp4["POST /admin/companies/{company_id}/link-subaccount"]
+        Cmp5["GET /admin/companies/{company_id}/features"]
+        Cmp6["POST /admin/companies/{company_id}/features/{feature_code}/enable"]
+        Cmp7["POST /admin/companies/{company_id}/features/{feature_code}/disable"]
+    end
+    Admin --> AdminCompanies
+    AdminCompanies --> DB
+    AdminCompanies --> AsaasClient
+
+    subgraph AdminPayments["Admin - Asaas - /admin"]
+        AP1["GET /admin/subaccounts"]
+        AP2["GET /admin/subaccounts/{account_id}"]
+        AP3["POST /admin/subaccounts"]
+        AP4["DELETE /admin/subaccounts/{account_id}"]
+        AP5["POST /admin/subaccounts/{account_id}/resend-activation-link"]
+        AP6["GET /admin/subaccounts/{account_id}/access-tokens"]
+        AP7["POST /admin/subaccounts/{account_id}/access-tokens"]
+        AP8["DELETE /admin/subaccounts/{account_id}/access-tokens/{token_id}"]
+        AP9["GET /admin/subaccounts/{account_id}/split-rules"]
+        AP10["POST /admin/subaccounts/{account_id}/split-rules"]
+        AP11["PATCH /admin/subaccounts/{account_id}/split-rules/{rule_id}"]
+        AP12["GET /admin/subaccounts/{account_id}/payments"]
+        AP13["GET /admin/subaccounts/{account_id}/payments/{payment_id}"]
+        AP14["POST /admin/subaccounts/{account_id}/payments/{payment_id}/refund"]
+        AP15["POST /admin/subaccounts/{account_id}/payments/{payment_id}/cancel"]
+        AP16["GET /admin/asaas/audit-logs"]
+    end
+    Admin --> AdminPayments
+    AdminPayments --> AsaasClient
+    AdminPayments --> DB
+
+    subgraph Knowledge["Conhecimento - /admin/knowledge-entries"]
+        K1["GET /admin/knowledge-entries"]
+        K2["POST /admin/knowledge-entries"]
+        K3["PATCH /admin/knowledge-entries/{entry_id}"]
+        K4["DELETE /admin/knowledge-entries/{entry_id}"]
+    end
+    Admin --> Knowledge
+    Knowledge --> DB
+
+    subgraph Realtime["Socket.IO - transporte de chat"]
+        E1["connect"]
+        E2["disconnect"]
+        E3["join_conversation"]
+        E4["send_message"]
+        E5["assistant_chunk / assistant_done / assistant_error"]
+    end
+    Client --> Realtime
+    Realtime --> Conversations
+    Realtime --> Mind
+    Realtime --> DB
+
+    classDef public fill:#e8f4ff,stroke:#1976d2
+    classDef admin fill:#fff3e0,stroke:#ef6c00
+    classDef external fill:#f3e5f5,stroke:#7b1fa2
+    class Client,Accounts,Conversations,Quotes,Orders,Invoices,Payments,Catalog,Meta public
+    class Admin,AdminRead,AdminCompanies,AdminPayments,Knowledge admin
+    class Mind,Relay,Asaas,AsaasClient,Socket,Realtime external
