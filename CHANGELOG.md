@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Adicionada `docs/API_SPEC.md`: mapa de rotas, autenticação, integrações e
+  módulos do Platform para implementação orientada ao domínio.
+
 - Adicionada imagem AWS isolada (`Dockerfile.aws`), executada pelo usuário sem
   privilégios `app` (UID 10001), e seu contexto específico de build, que exclui
   `.env`, certificados e chaves. O Dockerfile e Compose de desenvolvimento
