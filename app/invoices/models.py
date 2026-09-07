@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from app.db.base import Base
@@ -28,6 +28,8 @@ class Invoice(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(3), default="BRL")
     status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    # Explicit marker: never infer NFS-e from a paid charge alone (fatia 01).
+    requires_nfse: Mapped[bool] = mapped_column(Boolean, default=False)
     due_date: Mapped[date] = mapped_column(Date)
     payment_link: Mapped[str | None] = mapped_column(String(500), default=None)
     # Only a digest of the provider event is retained here. Raw provider

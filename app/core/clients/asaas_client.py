@@ -180,6 +180,34 @@ class AsaasClient:
     async def cancel_payment(self, account_id: str, payment_id: str) -> dict[str, Any]:
         return await self._request("DELETE", f"/subaccounts/{account_id}/payments/{payment_id}")
 
+    # -- NFS-e (fiscal invoice on a subaccount) -----------------
+
+    @log_call
+    async def schedule_nfse(self, account_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request(
+            "POST", f"/subaccounts/{account_id}/invoices", json_body=payload
+        )
+
+    @log_call
+    async def get_nfse(self, account_id: str, nfse_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/subaccounts/{account_id}/invoices/{nfse_id}")
+
+    @log_call
+    async def cancel_nfse(self, account_id: str, nfse_id: str) -> dict[str, Any]:
+        return await self._request(
+            "POST", f"/subaccounts/{account_id}/invoices/{nfse_id}/cancel", json_body={}
+        )
+
+    @log_call
+    async def ingest_mirror_invoice(
+        self, account_id: str, resource: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/subaccounts/{account_id}/mirror/invoices",
+            json_body={"resource": resource},
+        )
+
     # -- Audit --------------------------------------------------
 
     @log_call

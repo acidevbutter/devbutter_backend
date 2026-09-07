@@ -79,7 +79,16 @@ async def list_webhook_events(
     )
 
 
-_SENSITIVE_KEYS = ("customer", "wallet", "apikey", "accesstoken", "token", "cpfcnpj")
+_SENSITIVE_KEYS = (
+    "customer",
+    "wallet",
+    "apikey",
+    "accesstoken",
+    "token",
+    "cpfcnpj",
+    "pdfurl",
+    "xmlurl",
+)
 
 
 def _mask_payload(value: object) -> object:
