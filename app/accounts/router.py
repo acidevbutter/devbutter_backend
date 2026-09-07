@@ -1,15 +1,18 @@
 import uuid
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Body, File, UploadFile, status
 
+from app.accounts.billing_service import onboarding_required
 from app.accounts.dependencies import (
+    AccountBillingServiceDep,
     AccountServiceDep,
     CurrentAccount,
     CurrentCompany,
     CurrentUser,
     PasswordRecoveryServiceDep,
 )
-from app.accounts.models import Account, Company, User
+from app.accounts.models import Account, AsaasSubaccountLink, Company, User
 from app.accounts.schemas import (
     AccountCreate,
     AccountRead,
@@ -17,6 +20,8 @@ from app.accounts.schemas import (
     AccountSelectionRead,
     AccountSignup,
     AccountUpdate,
+    BillingProfileInput,
+    BillingProfileRead,
     CompanyCreate,
     CompanyRead,
     LoginRequest,
@@ -27,8 +32,18 @@ from app.accounts.schemas import (
     PasswordSetupCheck,
     PasswordSetupComplete,
     RefreshRequest,
+    SubaccountStatusRead,
     TokenPair,
 )
+from app.core.exceptions import ValidationFailedError
+
+_MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+_ALLOWED_DOCUMENT_MIME = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -129,6 +144,7 @@ def _account_read(
     account: Account,
     accounts: list[Account],
     companies: dict[uuid.UUID, Company],
+    link: AsaasSubaccountLink | None = None,
 ) -> AccountRead:
     return AccountRead(
         id=account.id,
@@ -145,6 +161,10 @@ def _account_read(
         is_active=user.is_active,
         created_at=account.created_at,
         accounts=[_account_selection(item, companies[item.company_id]) for item in accounts],
+        onboarding_required=onboarding_required(link),
+        subaccount_status=(
+            SubaccountStatusRead.model_validate(link) if link is not None else None
+        ),
     )
 
 
@@ -156,10 +176,12 @@ async def get_me(
     company: CurrentCompany,
     user: CurrentUser,
     service: AccountServiceDep,
+    billing: AccountBillingServiceDep,
 ) -> AccountRead:
     accounts = await service.list_accounts(user.id)
     companies = {item.id: item for item in await service.list_companies(user.id)}
-    return _account_read(user, company, account, accounts, companies)
+    link = await billing.get_link(company.id)
+    return _account_read(user, company, account, accounts, companies, link)
 
 
 @router.patch(
@@ -171,13 +193,108 @@ async def update_me(
     company: CurrentCompany,
     user: CurrentUser,
     service: AccountServiceDep,
+    billing: AccountBillingServiceDep,
 ) -> AccountRead:
     updated = await service.update(user, company, account, payload)
     refreshed_user = await service.get_user(user.id)
     assert refreshed_user is not None
     accounts = await service.list_accounts(user.id)
     companies = {item.id: item for item in await service.list_companies(user.id)}
-    return _account_read(refreshed_user, company, updated, accounts, companies)
+    link = await billing.get_link(company.id)
+    return _account_read(refreshed_user, company, updated, accounts, companies, link)
+
+
+@router.get(
+    "/billing-profile",
+    response_model=BillingProfileRead | None,
+    summary="Get the company's dados de recebimento (Asaas subaccount inputs)",
+)
+async def get_billing_profile(
+    company: CurrentCompany, billing: AccountBillingServiceDep
+) -> BillingProfileRead | None:
+    profile = await billing.get_profile(company.id)
+    return BillingProfileRead.model_validate(profile) if profile is not None else None
+
+
+@router.put(
+    "/billing-profile",
+    response_model=BillingProfileRead,
+    summary="Create or replace the company's dados de recebimento",
+)
+async def put_billing_profile(
+    payload: BillingProfileInput,
+    company: CurrentCompany,
+    billing: AccountBillingServiceDep,
+) -> BillingProfileRead:
+    profile = await billing.upsert_profile(company.id, payload)
+    return BillingProfileRead.model_validate(profile)
+
+
+@router.get(
+    "/subaccount/onboarding",
+    summary="Onboarding status + pending documents for the company's subaccount",
+)
+async def get_subaccount_onboarding(
+    company: CurrentCompany, billing: AccountBillingServiceDep
+) -> dict[str, Any]:
+    return await billing.get_onboarding(company.id)
+
+
+@router.post(
+    "/subaccount/resend-activation",
+    summary="Resend the subaccount's Asaas activation link",
+)
+async def resend_subaccount_activation(
+    company: CurrentCompany, billing: AccountBillingServiceDep
+) -> dict[str, Any]:
+    return await billing.resend_activation(company.id)
+
+
+@router.get(
+    "/subaccount/commercial-info",
+    summary="Read the subaccount's commercialInfo (annual reconfirmation)",
+)
+async def get_subaccount_commercial_info(
+    company: CurrentCompany, billing: AccountBillingServiceDep
+) -> dict[str, Any]:
+    return await billing.get_commercial_info(company.id)
+
+
+@router.post(
+    "/subaccount/commercial-info",
+    summary="Confirm/update the subaccount's commercialInfo",
+)
+async def update_subaccount_commercial_info(
+    company: CurrentCompany,
+    billing: AccountBillingServiceDep,
+    payload: Annotated[dict[str, Any], Body(...)],
+) -> dict[str, Any]:
+    return await billing.update_commercial_info(company.id, payload)
+
+
+@router.post(
+    "/subaccount/documents/{group_id}",
+    summary="Upload one file to an Asaas document group (no onboardingUrl)",
+)
+async def upload_subaccount_document(
+    group_id: str,
+    company: CurrentCompany,
+    billing: AccountBillingServiceDep,
+    file: Annotated[UploadFile, File(...)],
+) -> dict[str, Any]:
+    content = await file.read()
+    if len(content) > _MAX_DOCUMENT_BYTES:
+        raise ValidationFailedError("File exceeds the 10 MB limit")
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in _ALLOWED_DOCUMENT_MIME:
+        raise ValidationFailedError(f"Unsupported file type {content_type!r}")
+    return await billing.upload_document(
+        company.id,
+        group_id,
+        filename=file.filename or "document",
+        content=content,
+        content_type=content_type,
+    )
 
 
 @router.get(

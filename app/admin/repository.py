@@ -412,6 +412,50 @@ class AdminRepository:
             total,
         )
 
+    async def list_subaccount_status(
+        self, *, status: str | None, offset: int, limit: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        query = (
+            select(Company, AsaasSubaccountLink)
+            .join(AsaasSubaccountLink, AsaasSubaccountLink.company_id == Company.id)
+        )
+        count_query = (
+            select(func.count())
+            .select_from(AsaasSubaccountLink)
+            .join(Company, Company.id == AsaasSubaccountLink.company_id)
+        )
+        if status:
+            condition = or_(
+                AsaasSubaccountLink.provisioning_status == status,
+                AsaasSubaccountLink.onboarding_status == status,
+                AsaasSubaccountLink.approval_status == status,
+            )
+            query = query.where(condition)
+            count_query = count_query.where(condition)
+        total = int((await self.session.execute(count_query)).scalar_one())
+        result = await self.session.execute(
+            query.order_by(AsaasSubaccountLink.updated_at.desc()).offset(offset).limit(limit)
+        )
+        return (
+            [
+                {
+                    "company_id": company.id,
+                    "company_name": company.name,
+                    "cnpj": company.cnpj,
+                    "asaas_account_id": link.asaas_account_id,
+                    "provisioning_status": link.provisioning_status,
+                    "onboarding_status": link.onboarding_status,
+                    "approval_status": link.approval_status,
+                    "commercial_info_status": link.commercial_info_status,
+                    "commercial_info_expires_at": link.commercial_info_expires_at,
+                    "last_error": link.last_error,
+                    "updated_at": link.updated_at,
+                }
+                for company, link in result.all()
+            ],
+            total,
+        )
+
     async def get_company_detail(self, company_id: uuid.UUID) -> dict[str, Any] | None:
         result = await self.session.execute(
             select(Company, User, AsaasSubaccountLink)

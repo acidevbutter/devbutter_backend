@@ -6,7 +6,10 @@ from decimal import Decimal
 from typing import Any
 
 from app.accounts.models import AsaasSubaccountLink
-from app.accounts.repository import AsaasSubaccountLinkRepository
+from app.accounts.repository import (
+    AsaasSubaccountLinkRepository,
+    CompanyBillingProfileRepository,
+)
 from app.admin.payments_service import AdminPaymentsService
 from app.admin.repository import AdminRepository
 from app.core.exceptions import NotFoundError, ValidationFailedError
@@ -30,10 +33,12 @@ class AdminCompaniesService:
         repository: AdminRepository,
         link_repository: AsaasSubaccountLinkRepository,
         payments_service: AdminPaymentsService,
+        billing_profile_repository: CompanyBillingProfileRepository | None = None,
     ):
         self._repository = repository
         self._link_repository = link_repository
         self._payments_service = payments_service
+        self._billing_profile_repository = billing_profile_repository
 
     async def list_companies(
         self, *, search: str | None, offset: int, limit: int
@@ -63,16 +68,36 @@ class AdminCompaniesService:
         split_rules: list[dict[str, Any]] = []
         access_tokens: dict[str, Any] = {}
         used_percent = None
-        if link is not None:
+        if link is not None and link.asaas_account_id is not None:
             split_rules = await self._payments_service.list_split_rules(link.asaas_account_id)
             access_tokens = await self._payments_service.list_access_tokens(
                 link.asaas_account_id
             )
             used_percent = self._sum_active_percentage(split_rules)
+        billing_profile = None
+        if self._billing_profile_repository is not None:
+            profile = await self._billing_profile_repository.get_by_company(company_id)
+            if profile is not None:
+                billing_profile = {
+                    "legal_name": profile.legal_name,
+                    "billing_email": profile.billing_email,
+                    "cnpj": profile.cnpj,
+                    "company_type": profile.company_type,
+                    "mobile_phone": profile.mobile_phone,
+                    "income_value": str(profile.income_value),
+                    "address": profile.address,
+                    "address_number": profile.address_number,
+                    "complement": profile.complement,
+                    "province": profile.province,
+                    "postal_code": profile.postal_code,
+                    "site": profile.site,
+                    "updated_at": profile.updated_at.isoformat(),
+                }
         return {
             "company": row["company"],
             "user": row["user"],
             "link": link,
+            "billing_profile": billing_profile,
             "split_rules": split_rules,
             "access_tokens": access_tokens,
             "used_percent": used_percent,
