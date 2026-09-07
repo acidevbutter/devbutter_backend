@@ -11,6 +11,14 @@
   `DiagnosisPreview` (snapshot em `butter_mind/contracts/conversation_state.schema.json`).
 - `ConversationPreview.field_options` (antes de virar passthrough): passthrough
   do `_OPTION_CATALOG` do butter_mind para a etapa de review do chat.
+
+- Adicionada `docs/API_SPEC.md`: mapa de rotas, autenticação, integrações e
+  módulos do Platform para implementação orientada ao domínio.
+
+- Adicionada imagem AWS isolada (`Dockerfile.aws`), executada pelo usuário sem
+  privilégios `app` (UID 10001), e seu contexto específico de build, que exclui
+  `.env`, certificados e chaves. O Dockerfile e Compose de desenvolvimento
+  permanecem inalterados.
 - Fluxo Cotação IA turno 2 (ADR-0004): `ConversationPreview`/`ConversationTurn`
   espelham `stage`, `options`, `selected_option_key` e `missing_fields` do
   butter_mind; novos `POST /conversations/{id}/select-option` e
