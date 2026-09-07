@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import date, timedelta
 
 from httpx import AsyncClient
@@ -7,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.accounts.models import User
 from app.core.clients.asaas_client import get_asaas_client
 from app.core.clients.relay_client import get_relay_client
+from app.invoices.models import Invoice
 from app.main import app
 from app.settings.config import settings
 from tests.conftest import auth_headers, signup
@@ -191,6 +194,15 @@ async def test_asaas_webhook_updates_invoice_status_idempotently(
     second = await client.post("/webhooks/asaas", json=webhook_payload, headers=headers)
     assert second.status_code == 204
     assert len(fake_relay.sent) == 1  # unchanged: same status redelivered is a no-op
+
+    invoice = await db_session.scalar(
+        select(Invoice).where(Invoice.asaas_charge_id == "pay_000001")
+    )
+    assert invoice is not None
+    assert invoice.last_event_at is not None
+    assert invoice.provider_payload_hash == hashlib.sha256(
+        json.dumps(webhook_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
     events = await client.get(
         "/admin/webhooks/events?event_type=PAYMENT_RECEIVED",

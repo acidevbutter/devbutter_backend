@@ -11,9 +11,11 @@ class InvoiceRead(BaseModel):
     id: uuid.UUID
     order_id: uuid.UUID
     asaas_invoice_id: str
+    asaas_charge_id: str
     amount: Decimal
     currency: str
     status: str
     due_date: date
     payment_link: str | None
+    last_event_at: datetime | None
     created_at: datetime

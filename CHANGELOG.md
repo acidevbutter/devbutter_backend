@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Alinhado o esquema local de clientes, faturas e webhooks ao espelho canônico
+  da Asaas sem alterar o fluxo de provisionamento Layer A.
+
 - Fluxo Cotação IA — `ConversationTurn.preview` vira passthrough puro (ADR-0005):
   removidos `ConversationPreview` + submodelos (`NextStep`, `ProductOption`,
   `BusinessProfile`, `QualificationProgress`, `BusinessMetric`,

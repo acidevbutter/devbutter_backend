@@ -1,3 +1,5 @@
+import hashlib
+import json
 from typing import Any
 
 from app.accounts.repository import AccountRepository
@@ -63,7 +65,7 @@ class WebhookService:
             payload=raw_payload,
         )
         try:
-            await self._dispatch(event)
+            await self._dispatch(event, raw_payload)
         except Exception as exc:
             await emit_metrics({"EventType": event.event}, [("WebhookFailed", 1, "Count")])
             detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
@@ -76,7 +78,7 @@ class WebhookService:
     async def reprocess_event(self, audit_event: WebhookEvent) -> WebhookEvent:
         event = AsaasWebhookEvent.model_validate(audit_event.payload)
         try:
-            await self._dispatch(event)
+            await self._dispatch(event, audit_event.payload)
         except Exception as exc:
             await emit_metrics({"EventType": event.event}, [("WebhookFailed", 1, "Count")])
             detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
@@ -86,7 +88,7 @@ class WebhookService:
         await emit_metrics({"EventType": event.event}, [("WebhookProcessed", 1, "Count")])
         return processed
 
-    async def _dispatch(self, event: AsaasWebhookEvent) -> None:
+    async def _dispatch(self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]) -> None:
         """PAYMENT_* events go through the Invoice/Order reconciliation
         below. Everything else -- ACCOUNT_STATUS_* and any event carrying no
         `payment` -- is accepted (200/204) and audited but otherwise a
@@ -97,9 +99,11 @@ class WebhookService:
         it.
         """
         if event.payment is not None:
-            await self.handle_payment_event(event)
+            await self.handle_payment_event(event, raw_payload)
 
-    async def handle_payment_event(self, event: AsaasWebhookEvent) -> None:
+    async def handle_payment_event(
+        self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
+    ) -> None:
         """Idempotent by construction: InvoiceRepository.update_status() is a
         no-op if the mapped status is already applied, so Asaas redelivering
         the same event twice sends at most one notification.
@@ -111,7 +115,12 @@ class WebhookService:
             raise NotFoundError(f"No invoice for Asaas payment {event.payment.id}")
 
         new_status = _STATUS_MAP.get(event.payment.status, event.payment.status)
-        invoice, changed = await self.invoice_repository.update_status(invoice, new_status)
+        payload_hash = hashlib.sha256(
+            json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        invoice, changed = await self.invoice_repository.update_status(
+            invoice, new_status, provider_payload_hash=payload_hash
+        )
         await self._reconcile_payment_attempts(invoice.id, new_status)
         if not changed:
             return

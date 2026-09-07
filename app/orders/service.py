@@ -60,7 +60,7 @@ class OrderService:
                 }
             )
             link = await self.account_repository.create_asaas_customer_link(
-                company.id, customer["id"]
+                company.id, customer["id"], external_reference=str(company.id)
             )
 
         payment = await self.asaas_client.create_payment(
