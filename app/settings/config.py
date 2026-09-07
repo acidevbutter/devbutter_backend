@@ -79,6 +79,18 @@ class Settings(BaseSettings):
     relay_sqs_endpoint_url: str | None = None
     relay_project_id: str = ""
 
+    # NFS-e (Layer A originator). Empty subaccount id means "do not emit".
+    asaas_nfse_subaccount_id: str = ""
+    asaas_nfse_municipal_service_id: str = ""
+    asaas_nfse_municipal_service_code: str = ""
+    asaas_nfse_municipal_service_name: str = ""
+    asaas_nfse_service_description: str = "Serviços de desenvolvimento de software"
+    butter_blob_base_url: str = ""
+    butter_blob_api_key: str = ""
+    butter_blob_namespace: str = "nfse"
+    butter_blob_timeout_seconds: float = 30.0
+    nfse_email_logo_url: str = "https://devbutter.com/logo.png"
+
     # Asaas webhook receiver -- validates the `asaas-access-token` header.
     # See https://docs.asaas.com/docs/duvidas-frequentes-webhooks
     asaas_webhook_access_token: str = ""
