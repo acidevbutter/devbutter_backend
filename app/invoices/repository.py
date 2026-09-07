@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -19,8 +19,11 @@ class InvoiceRepository:
         return await self.session.get(Invoice, invoice_id)
 
     async def get_by_asaas_invoice_id(self, asaas_invoice_id: str) -> Invoice | None:
+        return await self.get_by_asaas_charge_id(asaas_invoice_id)
+
+    async def get_by_asaas_charge_id(self, asaas_charge_id: str) -> Invoice | None:
         result = await self.session.execute(
-            select(Invoice).where(Invoice.asaas_invoice_id == asaas_invoice_id)
+            select(Invoice).where(Invoice.asaas_charge_id == asaas_charge_id)
         )
         return result.scalar_one_or_none()
 
@@ -68,14 +71,23 @@ class InvoiceRepository:
         await self.session.refresh(invoice)
         return invoice
 
-    async def update_status(self, invoice: Invoice, status_: str) -> tuple[Invoice, bool]:
+    async def update_status(
+        self,
+        invoice: Invoice,
+        status_: str,
+        *,
+        provider_payload_hash: str | None = None,
+        event_at: datetime | None = None,
+    ) -> tuple[Invoice, bool]:
         """Idempotent: returns (invoice, changed). Re-delivering the same
         webhook event with a status that's already applied is a no-op --
         callers use `changed` to decide whether to fire a client notification.
         """
-        if invoice.status == status_:
-            return invoice, False
-        invoice.status = status_
+        changed = invoice.status != status_
+        if changed:
+            invoice.status = status_
+        invoice.provider_payload_hash = provider_payload_hash or invoice.provider_payload_hash
+        invoice.last_event_at = event_at or datetime.now(UTC)
         await self.session.commit()
         await self.session.refresh(invoice)
-        return invoice, True
+        return invoice, changed

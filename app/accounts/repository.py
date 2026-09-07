@@ -186,9 +186,18 @@ class AccountRepository:
         return result.scalar_one_or_none()
 
     async def create_asaas_customer_link(
-        self, company_id: uuid.UUID, asaas_customer_id: str
+        self,
+        company_id: uuid.UUID,
+        asaas_customer_id: str,
+        *,
+        external_reference: str | None = None,
     ) -> AsaasCustomerLink:
-        link = AsaasCustomerLink(company_id=company_id, asaas_customer_id=asaas_customer_id)
+        link = AsaasCustomerLink(
+            company_id=company_id,
+            asaas_customer_id=asaas_customer_id,
+            external_reference=external_reference,
+            last_synced_at=datetime.now(UTC),
+        )
         self.session.add(link)
         await self.session.commit()
         await self.session.refresh(link)

@@ -89,6 +89,8 @@ class AsaasCustomerLink(Base):
         ForeignKey("companies.id", ondelete="CASCADE"), unique=True, index=True
     )
     asaas_customer_id: Mapped[str] = mapped_column(String(64))
+    external_reference: Mapped[str | None] = mapped_column(String(128), index=True, default=None)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
