@@ -10,22 +10,32 @@ class AsaasWebhookPayment(BaseModel):
     status: str
 
 
+class AsaasWebhookInvoice(BaseModel):
+    """Asaas NFS-e object on INVOICE_* events. Distinct from Layer A cobrança."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    status: str | None = None
+    number: str | None = None
+    payment: str | None = None
+    pdfUrl: str | None = None
+    xmlUrl: str | None = None
+    validationCode: str | None = None
+
+
 class AsaasWebhookEvent(BaseModel):
-    """Asaas's webhook body. Two shapes share this endpoint:
-    {"event": "PAYMENT_*", "payment": {...}} (reconciled against
-    Invoice/Order) and {"event": "ACCOUNT_STATUS_*", "account": {...}}
-    (00-levantamento-tecnico.md item B5) -- accepted, audited, and otherwise
-    a no-op, see app/webhooks/service.py. `payment`/`account` are optional so
-    one event type validates without the other's field; `extra="allow"` on
-    the model is deliberate too -- 00-levantamento-tecnico.md item B7: "o
-    payload pode ganhar campos novos" and this consumer must not break on
-    them.
+    """Asaas's webhook body. Three shapes share this endpoint:
+    {"event": "PAYMENT_*", "payment": {...}} (Layer A charge),
+    {"event": "INVOICE_*", "invoice": {...}} (NFS-e; Option B, not via asaas_payment),
+    {"event": "ACCOUNT_STATUS_*", "account": {...}} (audited no-op).
     """
 
     model_config = ConfigDict(extra="allow")
 
     event: str
     payment: AsaasWebhookPayment | None = None
+    invoice: AsaasWebhookInvoice | None = None
     account: dict[str, Any] | None = None
 
 

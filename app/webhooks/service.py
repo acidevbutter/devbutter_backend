@@ -1,12 +1,14 @@
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Any
 
 from app.accounts.repository import AccountRepository
 from app.core.decorators import log_errors
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.metrics import emit_metrics
 from app.invoices.repository import InvoiceRepository
+from app.nfse.service import NfseService
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
 from app.payment_methods.repository import PaymentMethodRepository
@@ -32,6 +34,25 @@ _STATUS_MAP = {
 }
 
 
+_DOCUMENT_URL_KEYS = frozenset({"pdfUrl", "xmlUrl", "pdf_url", "xml_url"})
+
+
+def _redact_invoice_document_urls(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep metadata, drop provider document URLs from the durable webhook row."""
+
+    def _walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: ("[redacted]" if key in _DOCUMENT_URL_KEYS else _walk(item))
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [_walk(item) for item in value]
+        return value
+
+    return _walk(payload)
+
+
 @log_errors
 class WebhookService:
     def __init__(
@@ -42,6 +63,8 @@ class WebhookService:
         notification_service: NotificationService,
         event_repository: WebhookEventRepository,
         payment_method_repository: PaymentMethodRepository | None = None,
+        nfse_service: NfseService | None = None,
+        nfse_factory: Callable[[], NfseService] | None = None,
     ):
         self.invoice_repository = invoice_repository
         self.order_repository = order_repository
@@ -49,6 +72,13 @@ class WebhookService:
         self.notification_service = notification_service
         self.event_repository = event_repository
         self.payment_method_repository = payment_method_repository
+        self._nfse_service = nfse_service
+        self._nfse_factory = nfse_factory
+
+    def _nfse(self) -> NfseService | None:
+        if self._nfse_service is None and self._nfse_factory is not None:
+            self._nfse_service = self._nfse_factory()
+        return self._nfse_service
 
     async def process_event(
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
@@ -56,14 +86,26 @@ class WebhookService:
         await emit_metrics({"EventType": event.event}, [("WebhookReceived", 1, "Count")])
         invoice = (
             await self.invoice_repository.get_by_asaas_invoice_id(event.payment.id)
-            if event.payment is not None
+            if event.payment is not None and not event.event.startswith("INVOICE_")
             else None
         )
-        audit_event = await self.event_repository.create(
-            event_type=event.event,
-            related_invoice_id=invoice.id if invoice else None,
-            payload=raw_payload,
-        )
+        emitter_id = raw_payload.get("id")
+        event_id = emitter_id if isinstance(emitter_id, str) and emitter_id else None
+        stored_payload = _redact_invoice_document_urls(raw_payload)
+        try:
+            audit_event = await self.event_repository.create(
+                event_type=event.event,
+                related_invoice_id=invoice.id if invoice else None,
+                payload=stored_payload,
+                event_id=event_id,
+            )
+        except ConflictError:
+            existing = (
+                await self.event_repository.get_by_event_id(event_id) if event_id else None
+            )
+            if existing is not None:
+                return existing
+            raise
         try:
             await self._dispatch(event, raw_payload)
         except Exception as exc:
@@ -98,6 +140,11 @@ class WebhookService:
         lifecycle is no longer handled here -- the asaas_payment proxy owns
         it.
         """
+        if event.event.startswith("INVOICE_"):
+            nfse = self._nfse()
+            if nfse is not None:
+                await nfse.apply_invoice_webhook(event)
+            return
         if event.payment is not None:
             await self.handle_payment_event(event, raw_payload)
 
@@ -138,6 +185,9 @@ class WebhookService:
         if user is None:
             return
         self.notification_service.notify_payment_status_changed(user, invoice)
+        nfse = self._nfse()
+        if nfse is not None:
+            await nfse.enqueue_from_paid_invoice(invoice)
 
     async def _reconcile_payment_attempts(self, invoice_id: Any, new_status: str) -> None:
         """Real fix for Phase-3 item 6 (webhook wiring): a saved-card
