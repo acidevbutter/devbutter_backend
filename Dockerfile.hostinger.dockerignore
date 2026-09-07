@@ -1,4 +1,4 @@
-# Apenas para `docker build -f Dockerfile.aws .`; não afeta o Dockerfile local.
+# Apenas para `docker build -f Dockerfile.hostinger .`; não afeta o Dockerfile local.
 .git
 .env
 .env.*

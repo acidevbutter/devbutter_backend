@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Imagem de deploy renomeada para `Dockerfile.hostinger` (Python 3.12, `curl` para healthcheck do Coolify).
+
 - Alinhado o esquema local de clientes, faturas e webhooks ao espelho canônico
   da Asaas sem alterar o fluxo de provisionamento Layer A.
 
