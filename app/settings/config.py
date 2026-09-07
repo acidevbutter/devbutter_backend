@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     butter_mind_internal_api_key: str = ""
     butter_mind_service_api_key: str = ""
 
+    # -- core/clients/butter_blob_client.py: DevButter's blob store, same Docker
+    # network (`blob-api`). Namespace-scoped: butter_blob binds every blob to
+    # butter_blob_namespace and the service key authenticates the caller.
+    butter_blob_base_url: str = "http://blob-api:8000"
+    butter_blob_request_timeout_seconds: float = 30.0
+    butter_blob_service_api_key: str = ""
+    butter_blob_namespace: str = "devbutter_backend"
+
     # -- conversations: per-IP rate limit for the anonymous concierge funnel
     # (ADR-0004) so it can't be turned into an open LLM tap. 0 disables it.
     conversation_rate_limit_per_minute: int = 20
@@ -82,6 +90,16 @@ class Settings(BaseSettings):
     # Asaas webhook receiver -- validates the `asaas-access-token` header.
     # See https://docs.asaas.com/docs/duvidas-frequentes-webhooks
     asaas_webhook_access_token: str = ""
+
+    # Publicly reachable base URL of THIS backend, used to register the
+    # subaccount's ACCOUNT_STATUS_* webhook on Asaas (webhooks[].url in the
+    # POST /subaccounts body). No trailing slash. Provisioning refuses to run
+    # with this empty so a subaccount is never created without a status
+    # webhook wired back.
+    backend_public_base_url: str = ""
+    # Optional address put on webhooks[].email so Asaas notifies ops of
+    # delivery problems; falls back to the account owner's email when unset.
+    asaas_webhook_ops_email: str = ""
 
     @property
     def payment_payload_keyring_dict(self) -> dict[str, str]:

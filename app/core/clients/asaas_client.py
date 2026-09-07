@@ -48,12 +48,21 @@ class AsaasClient:
     """
 
     def __init__(self) -> None:
-        self._client = httpx.AsyncClient(
-            base_url=settings.asaas_payment_base_url,
-            timeout=settings.asaas_request_timeout_seconds,
-            cert=(settings.asaas_client_cert_path, settings.asaas_client_key_path),
-            verify=settings.asaas_ca_cert_path,
-        )
+        # Built lazily on first use: constructing the httpx client reads the
+        # mTLS cert/CA files, which aren't present in unit tests that never
+        # make an outbound call (and override this client when they do).
+        self._client_instance: httpx.AsyncClient | None = None
+
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        if self._client_instance is None:
+            self._client_instance = httpx.AsyncClient(
+                base_url=settings.asaas_payment_base_url,
+                timeout=settings.asaas_request_timeout_seconds,
+                cert=(settings.asaas_client_cert_path, settings.asaas_client_key_path),
+                verify=settings.asaas_ca_cert_path,
+            )
+        return self._client_instance
 
     @log_call
     async def create_customer(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -113,6 +122,68 @@ class AsaasClient:
     async def resend_activation_link(self, account_id: str) -> dict[str, Any]:
         return await self._request("POST", f"/subaccounts/{account_id}/resend-activation-link")
 
+    # -- Subaccount onboarding (BaaS) ---------------------------------------
+
+    @log_call
+    async def get_subaccount_onboarding_documents(self, account_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/subaccounts/{account_id}/onboarding/documents")
+
+    @log_call
+    async def get_subaccount_onboarding_status(self, account_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/subaccounts/{account_id}/onboarding/status")
+
+    @log_call
+    async def get_subaccount_commercial_info(self, account_id: str) -> dict[str, Any]:
+        return await self._request(
+            "GET", f"/subaccounts/{account_id}/onboarding/commercial-info"
+        )
+
+    @log_call
+    async def update_subaccount_commercial_info(
+        self, account_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/subaccounts/{account_id}/onboarding/commercial-info",
+            json_body=payload,
+        )
+
+    @log_call
+    async def upload_subaccount_document(
+        self,
+        account_id: str,
+        group_id: str,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str,
+    ) -> dict[str, Any]:
+        """Multipart upload of one file to an Asaas document group that has no
+        ``onboardingUrl`` (asaas_subcontas_fluxo_completo.md §9.2). The bytes
+        are forwarded to asaas_payment's dedicated multipart route; nothing
+        about the file content is logged here or there."""
+        return await self._request_multipart(
+            "POST",
+            f"/subaccounts/{account_id}/onboarding/documents/{group_id}",
+            filename=filename,
+            content=content,
+            content_type=content_type,
+        )
+
+    @log_call
+    async def get_subaccount_document_file(self, account_id: str, file_id: str) -> dict[str, Any]:
+        return await self._request(
+            "GET", f"/subaccounts/{account_id}/onboarding/documents/files/{file_id}"
+        )
+
+    @log_call
+    async def delete_subaccount_document_file(
+        self, account_id: str, file_id: str
+    ) -> dict[str, Any]:
+        return await self._request(
+            "DELETE", f"/subaccounts/{account_id}/onboarding/documents/files/{file_id}"
+        )
+
     # -- Access tokens --------------------------------------------------
 
     @log_call
@@ -123,6 +194,19 @@ class AsaasClient:
     async def create_access_token(self, account_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request(
             "POST", f"/subaccounts/{account_id}/access-tokens", json_body=payload
+        )
+
+    @log_call
+    async def update_access_token(
+        self, account_id: str, token_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """PUT /subaccounts/{id}/access-tokens/{tokenId} -- Asaas requires
+        name+enabled+expirationDate together (no partial update). Used by the
+        rotation flow to disable the previous key once the new one is live."""
+        return await self._request(
+            "PUT",
+            f"/subaccounts/{account_id}/access-tokens/{token_id}",
+            json_body=payload,
         )
 
     @log_call
@@ -238,6 +322,38 @@ class AsaasClient:
             finally:
                 await self._record_metrics(method, started_at, status_class(response.status_code))
 
+    async def _request_multipart(
+        self,
+        method: str,
+        path: str,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str,
+    ) -> Any:
+        """Like ``_request`` but sends ``multipart/form-data`` (one ``file``
+        part). No retry, no body logging -- the payload is a raw document."""
+        started_at = time.perf_counter()
+        files = {"file": (filename, content, content_type)}
+        try:
+            response = await self._client.request(method, path, files=files)
+        except httpx.HTTPError as exc:
+            await self._record_metrics(method, started_at, "error")
+            raise UpstreamServiceError(f"asaas_payment request failed: {exc}") from exc
+
+        if response.status_code >= 400:
+            await self._record_metrics(method, started_at, status_class(response.status_code))
+            raise UpstreamServiceError(
+                f"asaas_payment returned {response.status_code} for {method} {path}"
+            )
+        await self._record_metrics(method, started_at, status_class(response.status_code))
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
     async def _record_metrics(self, operation: str, started_at: float, result: str) -> None:
         values = [
             ("UpstreamCallCount", 1, "Count"),
@@ -251,7 +367,9 @@ class AsaasClient:
         )
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        if self._client_instance is not None:
+            await self._client_instance.aclose()
+            self._client_instance = None
 
 
 _client: AsaasClient | None = None

@@ -24,6 +24,10 @@ class AsaasWebhookEvent(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    # Emitter-assigned event id -- used as the idempotency key ("at least
+    # once" delivery, asaas_subcontas_fluxo_completo.md §12.1). Optional: not
+    # every historical/simulated delivery carries one.
+    id: str | None = None
     event: str
     payment: AsaasWebhookPayment | None = None
     account: dict[str, Any] | None = None
