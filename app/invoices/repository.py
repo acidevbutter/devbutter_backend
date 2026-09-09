@@ -2,10 +2,11 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accounts.models import Account, Company
 from app.core.exceptions import ConflictError
 from app.invoices.models import Invoice
 from app.orders.models import Order
@@ -41,6 +42,20 @@ class InvoiceRepository:
             .order_by(Invoice.due_date.asc(), Invoice.created_at.desc())
         )
         return list(result.scalars())
+
+    async def count_paid_invoices_for_company(self, company_id: uuid.UUID) -> int:
+        """How many of a Company's Layer A invoices are already ``PAID`` --
+        used by the webhook to fire subaccount provisioning only on the
+        Company's *first* paid invoice."""
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(Invoice)
+            .join(Order, Order.id == Invoice.order_id)
+            .join(Account, Account.id == Order.account_id)
+            .join(Company, Company.id == Account.company_id)
+            .where(Company.id == company_id, Invoice.status == "PAID")
+        )
+        return int(result.scalar_one())
 
     async def create(
         self,

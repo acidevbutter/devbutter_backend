@@ -13,12 +13,19 @@ from app.accounts.models import (
     AsaasCustomerLink,
     AsaasSubaccountLink,
     Company,
+    CompanyBillingProfile,
     CompanyFeature,
     PasswordRecoveryToken,
     PasswordSetupToken,
     User,
 )
-from app.accounts.schemas import AccountCreate, AccountSignup, AccountUpdate, CompanyCreate
+from app.accounts.schemas import (
+    AccountCreate,
+    AccountSignup,
+    AccountUpdate,
+    BillingProfileInput,
+    CompanyCreate,
+)
 from app.core.exceptions import ConflictError
 
 _PASSWORD_SETUP_TOKEN_TTL = timedelta(days=7)
@@ -27,6 +34,26 @@ _PASSWORD_RECOVERY_TOKEN_TTL = timedelta(minutes=45)
 
 def _hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def _billing_profile_row(
+    company_id: uuid.UUID, payload: BillingProfileInput
+) -> CompanyBillingProfile:
+    return CompanyBillingProfile(
+        company_id=company_id,
+        legal_name=payload.legal_name,
+        billing_email=str(payload.billing_email),
+        cnpj=payload.cnpj,
+        company_type=payload.company_type.value,
+        mobile_phone=payload.mobile_phone,
+        income_value=payload.income_value,
+        address=payload.address,
+        address_number=payload.address_number,
+        complement=payload.complement,
+        province=payload.province,
+        postal_code=payload.postal_code,
+        site=payload.site,
+    )
 
 
 class AccountRepository:
@@ -99,6 +126,10 @@ class AccountRepository:
         self.session.add(user)
         self.session.add(company)
         self.session.add(account)
+        if payload.billing_profile is not None:
+            self.session.add(
+                _billing_profile_row(company.id, payload.billing_profile)
+            )
         await self._commit_or_raise_conflict(payload.email)
         await self.session.refresh(user)
         await self.session.refresh(company)
@@ -368,6 +399,58 @@ class AsaasSubaccountLinkRepository:
         return record
 
     async def update(self, record: AsaasSubaccountLink) -> AsaasSubaccountLink:
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def get_or_create(self, company_id: uuid.UUID) -> AsaasSubaccountLink:
+        record = await self.get_by_company(company_id)
+        if record is None:
+            record = AsaasSubaccountLink(company_id=company_id, provisioning_status="NONE")
+            self.session.add(record)
+            try:
+                await self.session.commit()
+            except IntegrityError:
+                await self.session.rollback()
+                record = await self.get_by_company(company_id)
+                assert record is not None
+            else:
+                await self.session.refresh(record)
+        return record
+
+
+class CompanyBillingProfileRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_by_company(self, company_id: uuid.UUID) -> CompanyBillingProfile | None:
+        result = await self.session.execute(
+            select(CompanyBillingProfile).where(
+                CompanyBillingProfile.company_id == company_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert(
+        self, company_id: uuid.UUID, payload: BillingProfileInput
+    ) -> CompanyBillingProfile:
+        record = await self.get_by_company(company_id)
+        if record is None:
+            record = _billing_profile_row(company_id, payload)
+            self.session.add(record)
+        else:
+            record.legal_name = payload.legal_name
+            record.billing_email = str(payload.billing_email)
+            record.cnpj = payload.cnpj
+            record.company_type = payload.company_type.value
+            record.mobile_phone = payload.mobile_phone
+            record.income_value = payload.income_value
+            record.address = payload.address
+            record.address_number = payload.address_number
+            record.complement = payload.complement
+            record.province = payload.province
+            record.postal_code = payload.postal_code
+            record.site = payload.site
         await self.session.commit()
         await self.session.refresh(record)
         return record

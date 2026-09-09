@@ -6,11 +6,39 @@ from fastapi import APIRouter
 
 from app.accounts.dependencies import CurrentAdminAccount
 from app.admin.dependencies import AdminPaymentsServiceDep
+from app.admin.repository import AdminRepository
+from app.admin.schemas import AdminSubaccountStatusList, AdminSubaccountStatusRow
+from app.core.dependencies import DbSession
 
 router = APIRouter(prefix="/admin", tags=["admin-payments"])
 
 
 # -- Subaccounts --------------------------------------------------
+
+
+@router.get(
+    "/subaccounts/status",
+    response_model=AdminSubaccountStatusList,
+    summary="Provisioning / onboarding / approval status of every company subaccount",
+)
+async def list_subaccount_status(
+    _admin: CurrentAdminAccount,
+    db: DbSession,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> AdminSubaccountStatusList:
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    rows, total = await AdminRepository(db).list_subaccount_status(
+        status=status, offset=(page - 1) * page_size, limit=page_size
+    )
+    return AdminSubaccountStatusList(
+        items=[AdminSubaccountStatusRow(**row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/subaccounts", summary="List Asaas subaccounts")

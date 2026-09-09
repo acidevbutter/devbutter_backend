@@ -268,13 +268,41 @@ class AdminCompanyListRead(BaseModel):
 
 
 class AdminSubaccountLinkRead(BaseModel):
-    asaas_account_id: str
+    asaas_account_id: str | None
     wallet_id: str | None
+    provisioning_status: str = "NONE"
+    last_error: str | None = None
     onboarding_status: str | None
     approval_status: str | None
+    commercial_info_status: str | None = None
+    bank_account_info_status: str | None = None
+    documentation_status: str | None = None
+    commercial_info_expires_at: datetime | None = None
+    closed_at: datetime | None = None
     split_quota_percent: Decimal | None
     quota_set_by: uuid.UUID | None
     quota_updated_at: datetime | None
+
+
+class AdminSubaccountStatusRow(BaseModel):
+    company_id: uuid.UUID
+    company_name: str
+    cnpj: str | None
+    asaas_account_id: str | None
+    provisioning_status: str
+    onboarding_status: str | None
+    approval_status: str | None
+    commercial_info_status: str | None
+    commercial_info_expires_at: datetime | None
+    last_error: str | None
+    updated_at: datetime
+
+
+class AdminSubaccountStatusList(BaseModel):
+    items: list[AdminSubaccountStatusRow]
+    total: int
+    page: int
+    page_size: int
 
 
 class AdminCompanyDetailRead(BaseModel):
@@ -284,6 +312,7 @@ class AdminCompanyDetailRead(BaseModel):
     owner_name: str
     owner_email: str
     link: AdminSubaccountLinkRead | None
+    billing_profile: dict[str, Any] | None = None
     split_rules: list[dict[str, Any]]
     access_tokens: dict[str, Any]
     used_percent: Decimal | None
