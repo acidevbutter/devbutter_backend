@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Conexão Postgres passa a ser `DATABASE_HOST` / `PORT` / `USER` / `PASSWORD` /
+  `NAME`; o Pydantic monta `postgresql+asyncpg://`. `DATABASE_URL` residual
+  impede o boot fora de development.
+
 - Imagem de deploy renomeada para `Dockerfile.hostinger` (Python 3.12, `curl` para healthcheck do Coolify).
 
 - Alinhado o esquema local de clientes, faturas e webhooks ao espelho canônico

@@ -95,11 +95,20 @@ async def real_postgres_db():
 
     # env.py (alembic/env.py) reads `settings.database_url` at run time to
     # build its own engine -- point the process-wide Settings singleton at
-    # the throwaway database for the duration of `command.upgrade`, exactly
-    # like `poetry run alembic upgrade head` would with DATABASE_URL set to
-    # this value on the command line.
-    original_url = settings.database_url
-    settings.database_url = test_url
+    # the throwaway database for the duration of `command.upgrade`.
+    parsed = make_url(test_url)
+    original = (
+        settings.database_host,
+        settings.database_port,
+        settings.database_user,
+        settings.database_password,
+        settings.database_name,
+    )
+    settings.database_host = parsed.host or ""
+    settings.database_port = parsed.port or 5432
+    settings.database_user = parsed.username or ""
+    settings.database_password = parsed.password or ""
+    settings.database_name = parsed.database or ""
     try:
         alembic_cfg = Config(str(_BACKEND_ROOT / "alembic.ini"))
         alembic_cfg.set_main_option("script_location", str(_BACKEND_ROOT / "alembic"))
@@ -110,7 +119,13 @@ async def real_postgres_db():
         # as a separate process would.
         await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
     finally:
-        settings.database_url = original_url
+        (
+            settings.database_host,
+            settings.database_port,
+            settings.database_user,
+            settings.database_password,
+            settings.database_name,
+        ) = original
 
     try:
         yield test_url

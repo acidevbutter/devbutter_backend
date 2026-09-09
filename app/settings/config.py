@@ -1,6 +1,9 @@
+import os
 from typing import Literal
+from urllib.parse import quote
 
 from dotenv import load_dotenv
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # pydantic-settings parses .env into this Settings object only -- it never
@@ -20,7 +23,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: Literal["development", "staging", "preprod", "production"] = "development"
 
-    database_url: str = "postgresql+asyncpg://platform:platform@shared-postgres:5432/platform"
+    database_host: str = "shared-postgres"
+    database_port: int = 5432
+    database_user: str = "platform"
+    database_password: str = "platform"
+    database_name: str = "platform"
 
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
 
@@ -94,6 +101,24 @@ class Settings(BaseSettings):
     # Asaas webhook receiver -- validates the `asaas-access-token` header.
     # See https://docs.asaas.com/docs/duvidas-frequentes-webhooks
     asaas_webhook_access_token: str = ""
+
+    @property
+    def database_url(self) -> str:
+        user = quote(self.database_user, safe="")
+        password = quote(self.database_password, safe="")
+        return (
+            f"postgresql+asyncpg://{user}:{password}"
+            f"@{self.database_host}:{self.database_port}/{self.database_name}"
+        )
+
+    @model_validator(mode="after")
+    def reject_legacy_database_url_outside_dev(self) -> "Settings":
+        if self.environment != "development" and os.environ.get("DATABASE_URL"):
+            raise ValueError(
+                "DATABASE_URL is no longer read; set DATABASE_HOST, DATABASE_PORT, "
+                "DATABASE_USER, DATABASE_PASSWORD and DATABASE_NAME"
+            )
+        return self
 
     @property
     def payment_payload_keyring_dict(self) -> dict[str, str]:
