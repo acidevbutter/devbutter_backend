@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Observabilidade HTTP normalizada: `RequestContextMiddleware`
+  (`app/settings/middleware.py`) agora emite exatamente um evento JSON
+  estruturado por requisição (`app.settings.logging_config.JsonFormatter`),
+  sucesso ou falha, com `timestamp`, `level`, `logger`, `event`, `service`,
+  `environment`, `request_id`, `method`, `route` (template casado, ex.
+  `/accounts/{id}`, nunca o path cru quando a rota casa), `status_code` e
+  `duration_ms`; falhas não tratadas preservam traceback via
+  `logger.exception` sem nunca logar payload/credenciais. `uvicorn.access` é
+  silenciado (`WARNING`, `propagate=False`) para não duplicar essa linha —
+  corrige uma duplicação real de log a cada requisição.
+
 - Conexão Postgres passa a ser `DATABASE_HOST` / `PORT` / `USER` / `PASSWORD` /
   `NAME`; o Pydantic monta `postgresql+asyncpg://`. `DATABASE_URL` residual
   impede o boot fora de development.
