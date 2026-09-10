@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
 from app import main
@@ -139,6 +140,7 @@ async def test_readiness_emits_failure_metric_when_database_is_unavailable(monke
 
     response = await main.readiness()
 
+    assert isinstance(response, JSONResponse)
     assert response.status_code == 503
     assert response.body == b'{"status":"unavailable"}'
     assert emitted == [({}, [("HealthCheckFailure", 1, "Count")])]

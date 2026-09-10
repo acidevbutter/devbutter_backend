@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from app.accounts.models import AsaasSubaccountLink, Company, CompanyBillingProfile, User
 from app.accounts.repository import (
@@ -143,7 +144,7 @@ class SubaccountProvisioningService:
 
     def _build_body(
         self, company: Company, profile: CompanyBillingProfile, owner: User | None
-    ) -> dict:
+    ) -> dict[str, Any]:
         webhook_email = settings.asaas_webhook_ops_email or (
             owner.email if owner is not None else profile.billing_email
         )

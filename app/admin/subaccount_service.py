@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.accounts.models import AsaasSubaccountLink
 from app.accounts.repository import AsaasSubaccountLinkRepository
@@ -50,18 +50,20 @@ class AdminSubaccountService:
 
     async def resend_activation(self, company_id: uuid.UUID) -> dict[str, Any]:
         link = await self._require_link(company_id)
-        return await self._asaas_client.resend_activation_link(link.asaas_account_id)
+        return await self._asaas_client.resend_activation_link(cast(str, link.asaas_account_id))
 
     async def get_commercial_info(self, company_id: uuid.UUID) -> dict[str, Any]:
         link = await self._require_link(company_id)
-        return await self._asaas_client.get_subaccount_commercial_info(link.asaas_account_id)
+        return await self._asaas_client.get_subaccount_commercial_info(
+            cast(str, link.asaas_account_id)
+        )
 
     async def update_commercial_info(
         self, company_id: uuid.UUID, payload: dict[str, Any]
     ) -> dict[str, Any]:
         link = await self._require_link(company_id)
         return await self._asaas_client.update_subaccount_commercial_info(
-            link.asaas_account_id, payload
+            cast(str, link.asaas_account_id), payload
         )
 
     async def rotate_key(self, company_id: uuid.UUID) -> dict[str, Any]:
@@ -73,7 +75,7 @@ class AdminSubaccountService:
         stamp = datetime.now(UTC).strftime("%Y%m%d%H%M")
         try:
             return await self._asaas_client.create_access_token(
-                link.asaas_account_id, {"name": f"rotated-{stamp}"}
+                cast(str, link.asaas_account_id), {"name": f"rotated-{stamp}"}
             )
         except UpstreamServiceError as exc:
             raise ValidationFailedError(
@@ -87,7 +89,7 @@ class AdminSubaccountService:
     ) -> dict[str, Any]:
         link = await self._require_link(company_id)
         return await self._asaas_client.update_access_token(
-            link.asaas_account_id,
+            cast(str, link.asaas_account_id),
             token_id,
             {
                 "name": f"disabled-{token_id[:8]}",
@@ -98,12 +100,14 @@ class AdminSubaccountService:
 
     async def delete_key(self, company_id: uuid.UUID, token_id: str) -> dict[str, Any]:
         link = await self._require_link(company_id)
-        return await self._asaas_client.revoke_access_token(link.asaas_account_id, token_id)
+        return await self._asaas_client.revoke_access_token(
+            cast(str, link.asaas_account_id), token_id
+        )
 
     async def close(self, company_id: uuid.UUID) -> AsaasSubaccountLink:
         link = await self._require_link(company_id)
         try:
-            await self._asaas_client.close_subaccount(link.asaas_account_id)
+            await self._asaas_client.close_subaccount(cast(str, link.asaas_account_id))
         except UpstreamServiceError as exc:
             # A BaaS subaccount can't be closed via DELETE /v3/accounts/{id} --
             # BaaS has its own process (asaas_subcontas_fluxo_completo.md §25/§27).

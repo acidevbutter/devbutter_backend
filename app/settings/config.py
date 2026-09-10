@@ -100,9 +100,8 @@ class Settings(BaseSettings):
     asaas_nfse_municipal_service_code: str = ""
     asaas_nfse_municipal_service_name: str = ""
     asaas_nfse_service_description: str = "Serviços de desenvolvimento de software"
-    butter_blob_base_url: str = ""
     butter_blob_api_key: str = ""
-    butter_blob_namespace: str = "nfse"
+    nfse_blob_namespace: str = "nfse"
     butter_blob_timeout_seconds: float = 30.0
     nfse_email_logo_url: str = "https://devbutter.com/logo.png"
 

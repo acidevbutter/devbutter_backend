@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -36,7 +37,7 @@ class QuoteRead(BaseModel):
     # ADR-0004: populated for AI quotes from the turno-2 flow. Shown in the
     # admin review queue so Marcos sees the chosen path + business context.
     selected_option_key: str | None = None
-    business_profile_snapshot: dict | None = None
+    business_profile_snapshot: dict[str, Any] | None = None
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None
     created_at: datetime

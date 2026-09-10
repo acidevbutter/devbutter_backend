@@ -79,20 +79,18 @@ class AccountBillingService:
         }
 
     async def get_commercial_info(self, company_id: uuid.UUID) -> dict[str, Any]:
-        link = await self._require_account_id(company_id)
-        return await self._asaas_client.get_subaccount_commercial_info(link.asaas_account_id)
+        account_id = await self._require_account_id(company_id)
+        return await self._asaas_client.get_subaccount_commercial_info(account_id)
 
     async def update_commercial_info(
         self, company_id: uuid.UUID, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        link = await self._require_account_id(company_id)
-        return await self._asaas_client.update_subaccount_commercial_info(
-            link.asaas_account_id, payload
-        )
+        account_id = await self._require_account_id(company_id)
+        return await self._asaas_client.update_subaccount_commercial_info(account_id, payload)
 
     async def resend_activation(self, company_id: uuid.UUID) -> dict[str, Any]:
-        link = await self._require_account_id(company_id)
-        return await self._asaas_client.resend_activation_link(link.asaas_account_id)
+        account_id = await self._require_account_id(company_id)
+        return await self._asaas_client.resend_activation_link(account_id)
 
     async def upload_document(
         self,
@@ -103,20 +101,20 @@ class AccountBillingService:
         content: bytes,
         content_type: str,
     ) -> dict[str, Any]:
-        link = await self._require_account_id(company_id)
+        account_id = await self._require_account_id(company_id)
         return await self._asaas_client.upload_subaccount_document(
-            link.asaas_account_id,
+            account_id,
             group_id,
             filename=filename,
             content=content,
             content_type=content_type,
         )
 
-    async def _require_account_id(self, company_id: uuid.UUID) -> AsaasSubaccountLink:
+    async def _require_account_id(self, company_id: uuid.UUID) -> str:
         link = await self._link_repository.get_by_company(company_id)
         if link is None or link.asaas_account_id is None:
             raise ValidationFailedError("This company has no provisioned subaccount")
-        return link
+        return link.asaas_account_id
 
 
 def _extract_pending_documents(documents: dict[str, Any]) -> list[dict[str, Any]]:

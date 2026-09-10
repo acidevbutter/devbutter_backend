@@ -3,10 +3,12 @@ import time
 import uuid
 from collections import defaultdict, deque
 
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from app.core.metrics import SERVICE_NAME, emit_metrics, route_template, status_class
 from app.settings.config import settings
@@ -37,7 +39,7 @@ class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
     _GUARDED_PREFIXES = ("/conversations",)
     _GUARDED_SUFFIXES = ("", "/messages", "/select-option", "/business-profile")
 
-    def __init__(self, app) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
         self._hits: dict[str, deque[float]] = defaultdict(deque)
 
@@ -53,7 +55,9 @@ class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
             tail.endswith(s) for s in self._GUARDED_SUFFIXES if s
         )
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         limit = settings.conversation_rate_limit_per_minute
         if limit > 0 and self._is_guarded(request):
             client_ip = request.client.host if request.client else "unknown"
@@ -78,7 +82,9 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     see app.settings.logging_config.JsonFormatter for the wire format.
     """
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         start = time.perf_counter()
@@ -144,7 +150,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def register_middleware(app) -> None:
+def register_middleware(app: FastAPI) -> None:
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(ConversationRateLimitMiddleware)
     app.add_middleware(

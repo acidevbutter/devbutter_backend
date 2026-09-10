@@ -108,7 +108,7 @@ async def test_delete_blob_sends_hard_flag_and_no_body(monkeypatch, emitted):
     no_content = httpx.Response(204, request=httpx.Request("DELETE", "http://x"))
     client, recorder = _client_with(monkeypatch, [no_content])
 
-    assert await client.delete_blob("b1", hard=True) is None
+    await client.delete_blob("b1", hard=True)
     assert recorder.calls[0]["method"] == "DELETE"
     assert recorder.calls[0]["params"] == {"hard": True}
 

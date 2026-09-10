@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -315,7 +315,7 @@ class AsaasClient:
         json_body: dict[str, Any] | None = None,
         retry_on_502: bool = True,
         timeout: float | None = None,
-    ) -> Any:
+    ) -> dict[str, Any]:
         started_at = time.perf_counter()
         attempt = 0
         while True:
@@ -346,7 +346,7 @@ class AsaasClient:
                 await self._record_metrics(method, started_at, status_class(response.status_code))
                 return {}
             try:
-                return response.json()
+                return cast(dict[str, Any], response.json())
             finally:
                 await self._record_metrics(method, started_at, status_class(response.status_code))
 
@@ -358,7 +358,7 @@ class AsaasClient:
         filename: str,
         content: bytes,
         content_type: str,
-    ) -> Any:
+    ) -> dict[str, Any]:
         """Like ``_request`` but sends ``multipart/form-data`` (one ``file``
         part). No retry, no body logging -- the payload is a raw document."""
         started_at = time.perf_counter()
@@ -378,7 +378,7 @@ class AsaasClient:
         if not response.content:
             return {}
         try:
-            return response.json()
+            return cast(dict[str, Any], response.json())
         except ValueError:
             return {}
 

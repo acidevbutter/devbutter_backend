@@ -161,7 +161,7 @@ class ButterMindClient:
         json_body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-    ) -> Any:
+    ) -> dict[str, Any]:
         started_at = time.perf_counter()
         try:
             response = await self._client.request(
@@ -177,7 +177,7 @@ class ButterMindClient:
                 status_code=response.status_code,
             )
         try:
-            return response.json()
+            return cast(dict[str, Any], response.json())
         finally:
             await self._record_metrics(method, started_at, status_class(response.status_code))
 
@@ -199,7 +199,7 @@ class ButterMindClient:
         path: str,
         *,
         json_body: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> dict[str, Any]:
         if not settings.butter_mind_internal_api_key:
             raise UpstreamServiceError("BUTTER_MIND_INTERNAL_API_KEY is not configured")
         return await self._request(

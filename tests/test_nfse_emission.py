@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import cast
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.models import Account, Company, User
+from app.core.clients.relay_client import RelayClient
 from app.invoices.models import Invoice
 from app.nfse.models import NfseIssuance
 from app.nfse.repository import NfseIssuanceRepository
@@ -202,7 +204,7 @@ async def test_invoice_webhook_duplicate_event_does_not_reupload(
         InvoiceRepository(db_session),
         OrderRepository(db_session),
         AccountRepository(db_session),
-        NotificationService(relay),
+        NotificationService(cast(RelayClient, relay)),
         WebhookEventRepository(db_session),
         nfse_service=nfse,
     )

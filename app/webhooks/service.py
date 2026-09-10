@@ -3,7 +3,7 @@ import json
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from app.accounts.repository import AccountRepository, AsaasSubaccountLinkRepository
 from app.core.decorators import log_errors
@@ -64,7 +64,7 @@ def _redact_invoice_document_urls(payload: dict[str, Any]) -> dict[str, Any]:
             return [_walk(item) for item in value]
         return value
 
-    return _walk(payload)
+    return cast(dict[str, Any], _walk(payload))
 
 
 @log_errors

@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from app.conversations.models import Conversation
 from app.conversations.repository import ConversationRepository
@@ -37,7 +37,7 @@ class ConversationService:
         """
         mind_session = await self.mind_client.create_diagnosis_session(str(uuid.uuid4()))
         await self.repository.set_mind_session_id(conversation, mind_session["id"])
-        return mind_session["id"]
+        return cast(str, mind_session["id"])
 
     async def _with_mind_session(
         self, conversation: Conversation, call: Callable[[str], Awaitable[T]]
@@ -45,7 +45,7 @@ class ConversationService:
         """Run `call(mind_session_id)`; if butter_mind reports the session gone
         (404), reprovision it once and retry."""
         try:
-            return await call(conversation.mind_session_id)
+            return await call(cast(str, conversation.mind_session_id))
         except UpstreamServiceError as exc:
             if exc.status_code != 404:
                 raise
@@ -143,7 +143,7 @@ class ConversationService:
         """
         try:
             stream = self.mind_client.stream_diagnosis_message(
-                conversation.mind_session_id, content
+                cast(str, conversation.mind_session_id), content
             )
             return stream, await self._first_event(stream)
         except UpstreamServiceError as exc:
@@ -208,7 +208,7 @@ class ConversationService:
         safer failure -- by the time submit is reachable, prior turns on the
         healed session have already rebuilt the history.
         """
-        request = await self.mind_client.submit_diagnosis(conversation.mind_session_id)
+        request = await self.mind_client.submit_diagnosis(cast(str, conversation.mind_session_id))
         await self.repository.mark_completed(conversation)
         return request
 

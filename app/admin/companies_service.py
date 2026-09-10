@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from app.accounts.models import AsaasSubaccountLink
 from app.accounts.repository import (
@@ -49,7 +49,11 @@ class AdminCompaniesService:
         items = []
         for row in rows:
             link: AsaasSubaccountLink | None = row["link"]
-            used_percent = await self._active_percentage(link) if link else None
+            used_percent = (
+                await self._active_percentage(link)
+                if link is not None and link.asaas_account_id is not None
+                else None
+            )
             items.append(
                 {
                     "company": row["company"],
@@ -139,7 +143,7 @@ class AdminCompaniesService:
         return await self._link_repository.create(link)
 
     async def _active_percentage(self, link: AsaasSubaccountLink) -> Decimal:
-        rules = await self._payments_service.list_split_rules(link.asaas_account_id)
+        rules = await self._payments_service.list_split_rules(cast(str, link.asaas_account_id))
         return self._sum_active_percentage(rules)
 
     @staticmethod

@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -151,7 +152,7 @@ class _FailingTokenizeAsaasClient(_StubAsaasClient):
 
 
 @pytest.fixture(autouse=True)
-def _payment_settings(monkeypatch: pytest.MonkeyPatch) -> bytes:
+def _payment_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[bytes]:
     key = os.urandom(32)
     encoded_key = base64.urlsafe_b64encode(key).decode("ascii").rstrip("=")
     monkeypatch.setattr(settings, "payment_payload_keyring", f"{_KID}:{encoded_key}")

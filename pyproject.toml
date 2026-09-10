@@ -57,10 +57,14 @@ known-third-party = ["alembic"]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 strict = true
+# Alembic's own `revision merge` template always types down_revision as
+# Union[str, None] even for a merge (a tuple of revisions) -- generated
+# boilerplate, not hand-authored code.
+exclude = "^alembic/versions/"
 
 [[tool.mypy.overrides]]
-# boto3/botocore ship no type information.
-module = ["boto3.*", "botocore.*"]
+# boto3/botocore/socketio/asyncpg ship no type information.
+module = ["boto3.*", "botocore.*", "socketio.*", "asyncpg.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
