@@ -43,12 +43,12 @@ from pathlib import Path
 
 import asyncpg
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from alembic import command
-from alembic.config import Config
 from app.settings.config import settings
 
 _ADMIN_URL = os.environ.get(
