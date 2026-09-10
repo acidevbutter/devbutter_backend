@@ -5,9 +5,15 @@ from typing import Annotated
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.accounts.billing_service import AccountBillingService
 from app.accounts.models import Account, Company, User
-from app.accounts.repository import AccountRepository
+from app.accounts.repository import (
+    AccountRepository,
+    AsaasSubaccountLinkRepository,
+    CompanyBillingProfileRepository,
+)
 from app.accounts.service import AccountService
+from app.core.clients.asaas_client import AsaasClient, get_asaas_client
 from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
 from app.core.exceptions import ForbiddenError, UnauthorizedError
@@ -21,6 +27,22 @@ def get_account_service(db: DbSession) -> AccountService:
 
 
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
+
+
+def get_account_billing_service(
+    db: DbSession,
+    asaas_client: Annotated[AsaasClient, Depends(get_asaas_client)],
+) -> AccountBillingService:
+    return AccountBillingService(
+        CompanyBillingProfileRepository(db),
+        AsaasSubaccountLinkRepository(db),
+        asaas_client,
+    )
+
+
+AccountBillingServiceDep = Annotated[
+    AccountBillingService, Depends(get_account_billing_service)
+]
 
 
 def get_password_recovery_service(

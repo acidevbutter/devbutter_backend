@@ -15,6 +15,8 @@ _TEMPLATE_PAYMENT_STATUS_CHANGED = "devbutter_payment_status_changed"
 _TEMPLATE_PENDING_ACCOUNT_LINK = "devbutter_pending_account_link"
 _TEMPLATE_QUOTE_RECEIVED = "devbutter_quote_received"
 _TEMPLATE_PASSWORD_RECOVERY = "devbutter_password_recovery"
+_TEMPLATE_SUBACCOUNT_ONBOARDING = "devbutter_subaccount_onboarding"
+_TEMPLATE_COMMERCIAL_INFO_EXPIRING = "devbutter_commercial_info_expiring"
 
 
 @log_errors
@@ -95,6 +97,34 @@ class NotificationService:
                     f"{settings.frontend_base_url}/portal/recuperar-senha/{token}"
                 ),
                 "expires_at": expires_at.isoformat(),
+            },
+        )
+
+    def notify_subaccount_onboarding(self, user: User, company_name: str) -> None:
+        """The company's Asaas subaccount was just provisioned -- point the
+        owner at the portal onboarding screen (login-gated) rather than a raw
+        Asaas onboardingUrl, which isn't available yet at this moment."""
+        self.relay_client.send(
+            _TEMPLATE_SUBACCOUNT_ONBOARDING,
+            user.email,
+            {
+                "name": user.name,
+                "company": company_name,
+                "onboarding_url": f"{settings.frontend_base_url}/portal/recebimentos",
+            },
+        )
+
+    def notify_commercial_info_expiring(
+        self, user: User, company_name: str, scheduled_date: str | None
+    ) -> None:
+        self.relay_client.send(
+            _TEMPLATE_COMMERCIAL_INFO_EXPIRING,
+            user.email,
+            {
+                "name": user.name,
+                "company": company_name,
+                "scheduled_date": scheduled_date,
+                "onboarding_url": f"{settings.frontend_base_url}/portal/recebimentos",
             },
         )
 

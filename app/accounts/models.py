@@ -113,10 +113,27 @@ class AsaasSubaccountLink(Base):
     company_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("companies.id", ondelete="CASCADE"), unique=True, index=True
     )
-    asaas_account_id: Mapped[str] = mapped_column(String(64))
+    # Nullable: a row is written even when the Asaas create call failed
+    # (provisioning_status="CREATION_FAILED"), so the admin panel can show the
+    # failure and retry without losing the company <-> attempt association.
+    asaas_account_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
     wallet_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    # NONE (row exists only to hold a failure) | PROVISIONED | CREATION_FAILED | CLOSED
+    provisioning_status: Mapped[str] = mapped_column(
+        String(32), default="NONE", server_default="NONE"
+    )
+    last_error: Mapped[str | None] = mapped_column(default=None)
     onboarding_status: Mapped[str | None] = mapped_column(String(32), default=None)
     approval_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    # Per-dimension cadastral status mirrored from ACCOUNT_STATUS_* webhooks
+    # (asaas_subcontas_fluxo_completo.md §11 / §29).
+    commercial_info_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    bank_account_info_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    documentation_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    commercial_info_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     split_quota_percent: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2), default=None
     )  # nullable teto of active PERCENTAGE split rules' sum; null = no extra cap
@@ -204,6 +221,44 @@ class CompanyFeature(Base):
     enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     last_error: Mapped[str | None] = mapped_column(default=None)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CompanyBillingProfile(Base):
+    """The "dados de recebimento" a Company submits at signup, needed to open
+    its Asaas white-label subaccount (Layer B). One row per Company. This is
+    the source payload for SubaccountProvisioningService: field names map 1:1
+    onto Asaas's ``POST /v3/accounts`` body (see
+    docs/asaas/asaas_subcontas_fluxo_completo.md §4.1). PJ only -- ``cnpj`` and
+    ``company_type`` are always required; there is no CPF/birthDate path.
+
+    The subaccount's credential is never stored here (or anywhere in this repo)
+    -- it lives encrypted in asaas_payment. This table is re-read later for the
+    annual ``commercialInfo`` reconfirmation, so it must stay complete and
+    current even after the subaccount is approved.
+    """
+
+    __tablename__ = "company_billing_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    legal_name: Mapped[str] = mapped_column(String(255))  # -> name (razão social)
+    billing_email: Mapped[str] = mapped_column(String(320))  # -> email
+    cnpj: Mapped[str] = mapped_column(String(14))  # -> cpfCnpj, digits only
+    company_type: Mapped[str] = mapped_column(String(20))  # MEI|LIMITED|INDIVIDUAL|ASSOCIATION
+    mobile_phone: Mapped[str] = mapped_column(String(20))  # -> mobilePhone, digits only
+    income_value: Mapped[Decimal] = mapped_column(Numeric(12, 2))  # -> incomeValue
+    address: Mapped[str] = mapped_column(String(255))
+    address_number: Mapped[str] = mapped_column(String(32))  # -> addressNumber
+    complement: Mapped[str | None] = mapped_column(String(255), default=None)
+    province: Mapped[str] = mapped_column(String(120))  # bairro
+    postal_code: Mapped[str] = mapped_column(String(8))  # -> postalCode, digits only
+    site: Mapped[str | None] = mapped_column(String(255), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
