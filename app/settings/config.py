@@ -137,6 +137,23 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def reject_dev_secrets_outside_development(self) -> "Settings":
+        if self.environment == "development":
+            return self
+        defaults = type(self).model_fields
+        if self.jwt_secret == defaults["jwt_secret"].default:
+            raise ValueError(
+                "JWT_SECRET must not be left at its development default outside development"
+            )
+        if self.database_password == defaults["database_password"].default:
+            raise ValueError(
+                "DATABASE_PASSWORD must not be left at its development default outside development"
+            )
+        if not self.payment_token_encryption_key:
+            raise ValueError("PAYMENT_TOKEN_ENCRYPTION_KEY must be set outside development")
+        return self
+
     @property
     def payment_payload_keyring_dict(self) -> dict[str, str]:
         pairs = [item.strip() for item in self.payment_payload_keyring.split(",") if item.strip()]
