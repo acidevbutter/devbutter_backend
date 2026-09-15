@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 
-import boto3
+from celery import Celery
 
 from app.core.decorators import log_call
 from app.core.exceptions import UpstreamServiceError
 from app.core.metrics import emit_metrics_background
 from app.settings.config import settings
 
+TASK_NAME = "butter_relay.process_message"
+
 
 class RelayClient:
-    """Publishes "send this email" jobs onto butter_relay's shared SQS queue.
+    """Publishes "send this email" jobs onto butter_relay's shared Celery
+    queue (same Redis broker butter_relay's own worker consumes from).
     devbutter_platform never calls an email provider directly and never
     renders templates itself -- it only builds {template_key, to, payload}
     and tags the message with its own `project_id`, exactly like every other
@@ -23,27 +25,27 @@ class RelayClient:
     """
 
     def __init__(self) -> None:
-        self._sqs = boto3.client(
-            "sqs",
-            region_name=settings.aws_region,
-            endpoint_url=settings.relay_sqs_endpoint_url,
-        )
+        # A plain send_task client -- devbutter_backend never imports
+        # butter_relay's own Celery app/task code (separate repos); it only
+        # needs to match the task name, kwargs, and queue by convention.
+        self._celery = Celery("devbutter_backend_relay_client", broker=settings.redis_url)
 
     @log_call
     def send(self, template_key: str, to: str, payload: dict[str, Any]) -> None:
         started_at = time.perf_counter()
-        if not settings.relay_sqs_queue_url:
+        if not settings.redis_url:
             self._record_metrics(started_at, "error")
-            raise UpstreamServiceError("RELAY_SQS_QUEUE_URL is not configured")
+            raise UpstreamServiceError("REDIS_URL is not configured")
         try:
-            self._sqs.send_message(
-                QueueUrl=settings.relay_sqs_queue_url,
-                MessageBody=json.dumps(
-                    {"template_key": template_key, "to": to, "payload": payload}
-                ),
-                MessageAttributes={
-                    "project_id": {"StringValue": settings.relay_project_id, "DataType": "String"}
+            self._celery.send_task(
+                TASK_NAME,
+                kwargs={
+                    "project_id": settings.relay_project_id,
+                    "template_key": template_key,
+                    "to": to,
+                    "payload": payload,
                 },
+                queue=settings.relay_queue_name,
             )
         except Exception:
             self._record_metrics(started_at, "error")

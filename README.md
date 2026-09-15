@@ -8,7 +8,7 @@ a visitor chats with an AI concierge (or Marcos sets a quote manually), the draf
 admin review queue, and an approved quote becomes an Order billed through Asaas.
 
 This service owns no billing, chat, or email logic of its own — it holds the business state
-(account, quote, order, invoice, catalog) and calls the three existing services as HTTP/mTLS/SQS
+(account, quote, order, invoice, catalog) and calls the three existing services as HTTP/mTLS/Celery
 clients. See `app/core/clients/`.
 
 ```
@@ -17,7 +17,7 @@ Client app (devbutter_frontend)
         v
 devbutter_platform (this service) -- Postgres (users, companies, accounts, conversations, quotes, orders, invoices, catalog, knowledge, webhook_events)
         |            |             |
-        | mTLS        | HTTP        | boto3 SQS
+        | mTLS        | HTTP        | Celery/Redis
         v            v             v
   asaas_payment   butter_mind   butter_relay
 ```
@@ -45,7 +45,7 @@ they are an aggregate view and an integration adapter (see
 | `service_catalog` | metadata a client registers about their own business/store |
 | `knowledge` | admin-managed pricing/context entries used by the platform |
 | `admin` | Marcos's review queue and cross-account operational views — not its own entity |
-| `notifications` | builds the payload and publishes it onto `butter_relay`'s SQS queue |
+| `notifications` | builds the payload and publishes it onto `butter_relay`'s Celery queue |
 | `core/clients` | the three integration clients — the only place this service talks to a sibling |
 
 ## Integration contracts
@@ -64,7 +64,7 @@ they are an aggregate view and an integration adapter (see
   `quotes/service.py` turns that into a `Quote(source="ai")`. butter_mind has no write access to
   Quote/Order/Invoice. Admin-only `/admin/mind/*` routes proxy metrics, governance and budgets
   mensais por fluxo com `BUTTER_MIND_INTERNAL_API_KEY`; esta chave nunca chega ao frontend.
-- **→ `butter_relay`** (`core/clients/relay_client.py`): `boto3` `SendMessage` onto the shared SQS
+- **→ `butter_relay`** (`core/clients/relay_client.py`): Celery `send_task` onto the shared Redis
   queue, tagged with this service's `project_id`. Only builds `{template_key, to, payload}` —
   templates (`devbutter_quote_approved`, `devbutter_payment_status_changed`) must be registered in
   the `butter_relay` admin, not hardcoded here.
@@ -92,6 +92,19 @@ cp .env.example .env
 ```
 
 The script creates the `devbutter_shared` network and shared PostgreSQL before starting the services.
+
+### Bootstrap de administrador
+
+Cria ou promove um administrador local de forma idempotente. Para usuário já
+existente, só altera a senha com `--reset-password`.
+
+```bash
+docker compose exec api python -m scripts.create_admin \
+  --email admin@example.com --name Administrador --password '...'
+```
+
+Também aceita `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` e
+`ADMIN_COMPANY_NAME` como variáveis de ambiente.
 
 Generate a new migration after changing a model (review it before applying — autogenerate can miss
 renames):
