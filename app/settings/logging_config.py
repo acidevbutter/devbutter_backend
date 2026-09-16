@@ -29,6 +29,13 @@ class JsonFormatter(logging.Formatter):
     converter = _utc_converter  # UTC timestamps in logs, matching CloudWatch.
 
     def format(self, record: logging.LogRecord) -> str:
+        if record.name == "metrics":
+            # app.core.metrics.emit_metrics already renders a flat, complete
+            # JSON payload for New Relic ingestion -- wrapping it as this
+            # formatter's own "message" string would nest it inside another
+            # JSON object, hiding every metric field from New Relic's
+            # top-level-key auto-parsing.
+            return record.getMessage()
         payload: dict[str, object] = {
             "timestamp": f"{self.formatTime(record, '%Y-%m-%dT%H:%M:%S')}.{int(record.msecs):03d}Z",
             "level": record.levelname,

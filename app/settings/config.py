@@ -2,18 +2,8 @@ import os
 from typing import Literal
 from urllib.parse import quote
 
-from dotenv import load_dotenv
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# pydantic-settings parses .env into this Settings object only -- it never
-# touches os.environ. boto3 (core/clients/relay_client.py) reads AWS
-# credentials directly from the real process environment, so when running
-# locally via `poetry run uvicorn` (not docker-compose's own `env_file:`,
-# which does populate real container env vars) .env needs to be loaded here
-# too. load_dotenv() never overrides a variable already set in the real
-# environment, matching pydantic-settings' own precedence.
-load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -86,12 +76,12 @@ class Settings(BaseSettings):
     # (ADR-0004) so it can't be turned into an open LLM tap. 0 disables it.
     conversation_rate_limit_per_minute: int = 20
 
-    # -- core/clients/relay_client.py: boto3 SQS publish into butter_relay's
-    # shared queue. project_id identifies the "devbutter-platform" Project
-    # registered in the relay admin (see notifications/service.py).
-    aws_region: str = "us-east-1"
-    relay_sqs_queue_url: str = ""
-    relay_sqs_endpoint_url: str | None = None
+    # -- core/clients/relay_client.py: Celery send_task into butter_relay's
+    # shared queue (same Redis broker relay's own worker consumes from).
+    # project_id identifies the "devbutter-platform" Project registered in
+    # the relay admin (see notifications/service.py).
+    redis_url: str = ""
+    relay_queue_name: str = "relay-shared"
     relay_project_id: str = ""
 
     # NFS-e (Layer A originator). Empty subaccount id means "do not emit".

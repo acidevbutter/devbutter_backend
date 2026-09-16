@@ -9,9 +9,10 @@ _DEFAULT_DATABASE_PASSWORD = Settings.model_fields["database_password"].default
 
 @pytest.fixture(autouse=True)
 def _clear_ambient_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    # config.py calls load_dotenv() at import time (for boto3), which leaks the
-    # real local .env secrets into os.environ -- clear them so tests control
-    # every value explicitly regardless of what's in the developer's .env.
+    # config.py calls load_dotenv() at import time (for core/metrics.py's
+    # AWS_EMF_* env reads), which leaks the real local .env secrets into
+    # os.environ -- clear them so tests control every value explicitly
+    # regardless of what's in the developer's .env.
     for var in ("JWT_SECRET", "DATABASE_PASSWORD", "PAYMENT_TOKEN_ENCRYPTION_KEY"):
         monkeypatch.delenv(var, raising=False)
 
