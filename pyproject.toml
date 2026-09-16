@@ -12,7 +12,6 @@ fastapi = "^0.115.0"
 uvicorn = { extras = ["standard"], version = "^0.30.0" }
 pydantic = { extras = ["email"], version = "^2.9.0" }
 pydantic-settings = "^2.5.0"
-python-dotenv = "^1.0.1"
 sqlalchemy = "^2.0.35"
 greenlet = "^3.1.0"
 alembic = "^1.13.0"
@@ -24,7 +23,6 @@ bcrypt = "^4.2.0"
 cryptography = "^43.0.0"
 pyjwt = "^2.9.0"
 python-socketio = "^5.16.4"
-aws-embedded-metrics = "^3.5.0"
 python-multipart = "^0.0.32"
 
 [tool.poetry.group.dev.dependencies]
