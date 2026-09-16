@@ -1,6 +1,8 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     command: uvicorn app.main:asgi_app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8002:8000"

@@ -38,7 +38,7 @@ campos e respostas: `/openapi.json` da instância em execução.
   acesso dele a Quote/Order/Invoice.
 - Asaas é chamado somente por `app/core/clients/asaas_client.py` com mTLS; a
   chave do provedor não entra neste serviço.
-- Relay é publicação SQS em `app/core/clients/relay_client.py`, não HTTP.
+- Relay é publicação Celery/Redis em `app/core/clients/relay_client.py`, não HTTP.
 - Para pagamento, preserve o envelope opaco e os contratos em
   `docs/prompts/payment-tokenization/`; não registrar PAN/CVV/token.
 

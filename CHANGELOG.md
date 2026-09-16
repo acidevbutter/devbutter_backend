@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Adicionado `scripts.create_admin`: bootstrap idempotente que cria ou promove
+  um administrador com a hierarquia local `User` → `Company` → `Account`, sem
+  exigir alteração manual no Postgres.
+
 - Observabilidade HTTP normalizada: `RequestContextMiddleware`
   (`app/settings/middleware.py`) agora emite exatamente um evento JSON
   estruturado por requisição (`app.settings.logging_config.JsonFormatter`),

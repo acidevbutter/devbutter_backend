@@ -69,7 +69,14 @@ async def list_companies(
                 name=row["company"].name,
                 cnpj=row["company"].cnpj,
                 owner_name=row["user"].name,
-                has_payment_method=row["link"] is not None,
+                # A link row exists as soon as a creation attempt is tried, not
+                # only once one succeeds -- a CREATION_FAILED attempt leaves a
+                # row with asaas_account_id still null so it can be retried.
+                # Checking `is not None` alone would show "configurado" for a
+                # company that still has no usable subaccount.
+                has_payment_method=(
+                    row["link"] is not None and row["link"].asaas_account_id is not None
+                ),
                 onboarding_status=row["link"].onboarding_status if row["link"] else None,
                 approval_status=row["link"].approval_status if row["link"] else None,
                 split_quota_percent=row["link"].split_quota_percent if row["link"] else None,
@@ -113,6 +120,30 @@ async def provision_subaccount(
     service: AdminSubaccountServiceDep,
 ) -> AdminSubaccountLinkRead:
     link = await service.provision(company_id, admin.id)
+    result = _link_read(link)
+    assert result is not None
+    return result
+
+
+@router.post(
+    "/{company_id}/subaccount/manual",
+    response_model=AdminSubaccountLinkRead,
+    summary="Open the company's Asaas subaccount from an admin-supplied payload",
+    description=(
+        "Fallback for when /provision-subaccount can't run (no or incomplete "
+        "billing profile) or already left the link CREATION_FAILED: the "
+        "admin fills in the POST /v3/accounts fields by hand instead of "
+        "them coming from CompanyBillingProfile. Same webhook, ownership, "
+        "and idempotency behavior as /provision-subaccount."
+    ),
+)
+async def create_manual_subaccount(
+    company_id: uuid.UUID,
+    payload: dict[str, Any],
+    admin: CurrentAdminAccount,
+    service: AdminSubaccountServiceDep,
+) -> AdminSubaccountLinkRead:
+    link = await service.create_manual(company_id, payload, admin.id)
     result = _link_read(link)
     assert result is not None
     return result

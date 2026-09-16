@@ -42,6 +42,20 @@ class AdminSubaccountService:
         )
         return result.link
 
+    async def create_manual(
+        self, company_id: uuid.UUID, payload: dict[str, Any], admin_account_id: uuid.UUID
+    ) -> AsaasSubaccountLink:
+        """Fallback for when ``provision`` can't run (no/incomplete billing
+        profile) or already failed once: the admin fills in the Asaas
+        fields by hand instead of them coming from the profile."""
+        link = await self._link_repository.get_by_company(company_id)
+        if link is not None and link.approval_status == "APPROVED":
+            raise ValidationFailedError("This company's subaccount is already approved")
+        result = await self._provisioning_service.create_manual(
+            company_id, payload, actor=f"admin-manual:{admin_account_id}"
+        )
+        return result.link
+
     async def _require_link(self, company_id: uuid.UUID) -> AsaasSubaccountLink:
         link = await self._link_repository.get_by_company(company_id)
         if link is None or link.asaas_account_id is None:

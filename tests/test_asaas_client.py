@@ -228,6 +228,19 @@ async def test_request_raises_on_other_4xx_without_retry(asaas_client, monkeypat
     assert len(recorder.calls) == 1
 
 
+async def test_create_subaccount_surfaces_validation_detail_on_422(asaas_client, monkeypatch):
+    recorder = _Recorder(
+        [_response(422, {"detail": [{"loc": ["body", "mobilePhone"], "msg": "field required"}]})]
+    )
+    monkeypatch.setattr(asaas_client._client, "request", recorder)
+
+    with pytest.raises(UpstreamServiceError) as exc_info:
+        await asaas_client.create_subaccount({"name": "Loja"})
+
+    assert "mobilePhone" in str(exc_info.value.detail)
+    assert exc_info.value.status_code == 422
+
+
 async def test_request_handles_empty_response_body(asaas_client, monkeypatch):
     recorder = _Recorder([_empty_response(204)])
     monkeypatch.setattr(asaas_client._client, "request", recorder)

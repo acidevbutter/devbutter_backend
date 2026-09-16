@@ -21,9 +21,9 @@ _TEMPLATE_COMMERCIAL_INFO_EXPIRING = "devbutter_commercial_info_expiring"
 
 @log_errors
 class NotificationService:
-    """Builds the payload and publishes it onto butter_relay's shared SQS
-    queue. Never sends email itself and never talks to Brevo directly --
-    see core/clients/relay_client.py and butter_relay/README.md.
+    """Builds the payload and publishes it onto butter_relay's shared Celery
+    queue (Redis broker). Never sends email itself and never talks to Brevo
+    directly -- see core/clients/relay_client.py and butter_relay/README.md.
     """
 
     def __init__(self, relay_client: RelayClient):

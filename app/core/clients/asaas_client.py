@@ -112,7 +112,13 @@ class AsaasClient:
 
     @log_call
     async def create_subaccount(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._request("POST", "/subaccounts", json_body=payload)
+        # expose_client_error_detail=True: a rejected subaccount creation is
+        # almost always a validation problem (missing/malformed field, either
+        # caught by asaas_payment's own SubaccountCreate schema or by Asaas
+        # itself) that the admin needs to see and fix, not a generic outage.
+        return await self._request(
+            "POST", "/subaccounts", json_body=payload, expose_client_error_detail=True
+        )
 
     @log_call
     async def close_subaccount(self, account_id: str) -> dict[str, Any]:
@@ -315,6 +321,7 @@ class AsaasClient:
         json_body: dict[str, Any] | None = None,
         retry_on_502: bool = True,
         timeout: float | None = None,
+        expose_client_error_detail: bool = False,
     ) -> dict[str, Any]:
         started_at = time.perf_counter()
         attempt = 0
@@ -339,8 +346,18 @@ class AsaasClient:
 
             if response.status_code >= 400:
                 await self._record_metrics(method, started_at, status_class(response.status_code))
+                # A 5xx means asaas_payment (or Asaas itself) is broken -- keep
+                # that generic, there's nothing actionable in the body. A 4xx
+                # is almost always the caller's payload, and callers that pass
+                # expose_client_error_detail need that detail to fix it (e.g.
+                # a subaccount creation rejected for a missing/malformed field).
+                if expose_client_error_detail and response.status_code < 500:
+                    raise UpstreamServiceError(
+                        self._format_client_error(response), status_code=response.status_code
+                    )
                 raise UpstreamServiceError(
-                    f"asaas_payment returned {response.status_code} for {method} {path}"
+                    f"asaas_payment returned {response.status_code} for {method} {path}",
+                    status_code=response.status_code,
                 )
             if not response.content:
                 await self._record_metrics(method, started_at, status_class(response.status_code))
@@ -381,6 +398,21 @@ class AsaasClient:
             return cast(dict[str, Any], response.json())
         except ValueError:
             return {}
+
+    @staticmethod
+    def _format_client_error(response: httpx.Response) -> str:
+        """Turns a 4xx body from asaas_payment (a Pydantic 422, or Asaas's own
+        error envelope forwarded as-is) into a readable detail string. Never
+        called for card-tokenization routes, so there's no risk of echoing
+        card data or provider tokens back to a caller."""
+        try:
+            body = response.json()
+        except ValueError:
+            text = response.text.strip()
+            return text[:1000] if text else f"HTTP {response.status_code}"
+        if isinstance(body, dict) and "detail" in body:
+            return str(body["detail"])[:1000]
+        return str(body)[:1000]
 
     async def _record_metrics(self, operation: str, started_at: float, result: str) -> None:
         values = [

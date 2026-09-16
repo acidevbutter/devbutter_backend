@@ -105,6 +105,28 @@ async def test_provision_creates_link_with_webhook(db_session: AsyncSession) -> 
     assert hook["authToken"] == "whk"
     assert set(ACCOUNT_STATUS_EVENTS).issubset(set(hook["events"]))
     assert len(notes.calls) == 1 and notes.calls[0][1] == "Loja PJ"
+    # Neither was set on the seeded profile -- must be left out entirely,
+    # not sent as null/"". Asaas rejects an empty `site` (fails its URL
+    # check on a blank string, unlike a field that's simply absent).
+    assert "site" not in body
+    assert "complement" not in body
+
+
+async def test_provision_includes_optional_fields_only_when_set(db_session: AsyncSession) -> None:
+    company = await _seed(db_session)
+    profile_repo = CompanyBillingProfileRepository(db_session)
+    profile = await profile_repo.get_by_company(company.id)
+    assert profile is not None
+    profile.site = "https://loja.com.br"
+    profile.complement = "sala 2"
+    await db_session.commit()
+
+    fake, notes = _FakeAsaas(), _FakeNotifications()
+    await _service(db_session, fake, notes).provision(company.id, actor="admin:1")
+
+    body = fake.created_bodies[0]
+    assert body["site"] == "https://loja.com.br"
+    assert body["complement"] == "sala 2"
 
 
 async def test_provision_is_idempotent(db_session: AsyncSession) -> None:
@@ -129,6 +151,69 @@ async def test_provision_failure_marks_creation_failed(db_session: AsyncSession)
     company = await _seed(db_session)
     fake, notes = _FakeAsaas(fail=True), _FakeNotifications()
     result = await _service(db_session, fake, notes).provision(company.id, actor="admin:1")
+
+    assert result.created is False
+    assert result.link.provisioning_status == "CREATION_FAILED"
+    assert result.link.last_error
+    assert notes.calls == []
+
+
+async def test_create_manual_uses_admin_payload_and_attaches_webhook(
+    db_session: AsyncSession,
+) -> None:
+    company = await _seed(db_session, with_profile=False)
+    fake, notes = _FakeAsaas(), _FakeNotifications()
+    payload = {
+        "name": "Loja PJ Manual LTDA",
+        "email": "manual@loja.com",
+        "cpfCnpj": "11222333000181",
+        "companyType": "LIMITED",
+        "mobilePhone": "11999997777",
+        "incomeValue": 4000.0,
+        "address": "Rua B",
+        "addressNumber": "20",
+        "province": "Centro",
+        "postalCode": "01001000",
+    }
+
+    result = await _service(db_session, fake, notes).create_manual(
+        company.id, payload, actor="admin-manual:1"
+    )
+
+    assert result.created is True
+    assert result.link.asaas_account_id == "acc_123"
+    assert result.link.provisioning_status == "PROVISIONED"
+    body = fake.created_bodies[0]
+    assert body["email"] == "manual@loja.com"
+    hook = body["webhooks"][0]
+    assert hook["url"] == "https://api.devbutter.test/webhooks/asaas"
+    assert set(ACCOUNT_STATUS_EVENTS).issubset(set(hook["events"]))
+    assert len(notes.calls) == 1
+
+
+async def test_create_manual_is_idempotent_once_provisioned(db_session: AsyncSession) -> None:
+    company = await _seed(db_session, with_profile=False)
+    fake, notes = _FakeAsaas(), _FakeNotifications()
+    svc = _service(db_session, fake, notes)
+    payload = {"name": "x", "email": "x@x.com"}
+
+    await svc.create_manual(company.id, payload, actor="admin-manual:1")
+    second = await svc.create_manual(company.id, payload, actor="admin-manual:1")
+
+    assert second.created is False
+    assert second.detail == "already_provisioned"
+    assert len(fake.created_bodies) == 1
+
+
+async def test_create_manual_failure_marks_creation_failed_for_retry(
+    db_session: AsyncSession,
+) -> None:
+    company = await _seed(db_session, with_profile=False)
+    fake, notes = _FakeAsaas(fail=True), _FakeNotifications()
+
+    result = await _service(db_session, fake, notes).create_manual(
+        company.id, {"name": "x", "email": "x@x.com"}, actor="admin-manual:1"
+    )
 
     assert result.created is False
     assert result.link.provisioning_status == "CREATION_FAILED"

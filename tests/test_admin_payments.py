@@ -255,6 +255,40 @@ async def test_admin_companies_list_and_detail(client: AsyncClient, db_session: 
     app.dependency_overrides.pop(get_asaas_client, None)
 
 
+async def test_admin_companies_list_treats_creation_failed_as_not_configured(
+    client: AsyncClient, db_session: AsyncSession
+):
+    # A link row can exist (created by get_or_create before the Asaas call)
+    # with no asaas_account_id when a creation attempt failed -- that must
+    # not read as "has_payment_method": true, or the admin has no signal
+    # that this company still needs a subaccount opened.
+    admin_tokens = await _signup_admin(client, db_session, "admin-companies-2@example.com")
+    company = await _create_company(db_session, "Empresa Falhou")
+    db_session.add(
+        AsaasSubaccountLink(
+            company_id=company.id,
+            asaas_account_id=None,
+            provisioning_status="CREATION_FAILED",
+            last_error="asaas rejected: invalid mobilePhone",
+        )
+    )
+    await db_session.commit()
+
+    listing = await client.get("/admin/companies", headers=auth_headers(admin_tokens))
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["name"] == "Empresa Falhou")
+    assert item["has_payment_method"] is False
+
+    detail = await client.get(
+        f"/admin/companies/{company.id}", headers=auth_headers(admin_tokens)
+    )
+    assert detail.status_code == 200
+    link = detail.json()["link"]
+    assert link["asaas_account_id"] is None
+    assert link["provisioning_status"] == "CREATION_FAILED"
+    assert link["last_error"] == "asaas rejected: invalid mobilePhone"
+
+
 async def test_admin_set_split_quota_requires_existing_link(
     client: AsyncClient, db_session: AsyncSession
 ):
