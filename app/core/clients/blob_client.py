@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -20,7 +20,7 @@ class BlobClient:
         )
 
     def _headers(self) -> dict[str, str]:
-        headers: dict[str, str] = {"X-Blob-Namespace": settings.butter_blob_namespace}
+        headers: dict[str, str] = {"X-Blob-Namespace": settings.nfse_blob_namespace}
         key = settings.butter_blob_api_key
         if key.startswith("bbk_"):
             headers["Authorization"] = f"Bearer {key}"
@@ -60,7 +60,7 @@ class BlobClient:
                 f"butter_blob returned {response.status_code}",
                 status_code=response.status_code,
             )
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     @log_call
     async def get(self, blob_id: str) -> dict[str, Any]:
@@ -78,7 +78,7 @@ class BlobClient:
                 f"butter_blob returned {response.status_code}",
                 status_code=response.status_code,
             )
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     async def aclose(self) -> None:
         await self._client.aclose()

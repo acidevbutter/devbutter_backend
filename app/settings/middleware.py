@@ -3,15 +3,29 @@ import time
 import uuid
 from collections import defaultdict, deque
 
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
-from app.core.metrics import emit_metrics, route_template, status_class
+from app.core.metrics import SERVICE_NAME, emit_metrics, route_template, status_class
 from app.settings.config import settings
 
 logger = logging.getLogger("app.request")
+
+
+def _logged_route(request: Request) -> str:
+    """Route template for the completion log, e.g. "/accounts/{account_id}".
+
+    Unlike `route_template` (used for metric dimensions, where an unmatched
+    request must collapse to the fixed low-cardinality "<unmatched>" bucket),
+    the log line falls back to the raw request path so a 404 is still
+    diagnosable from `route` alone.
+    """
+    route = route_template(request)
+    return request.url.path if route == "<unmatched>" else route
 
 
 class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
@@ -25,7 +39,7 @@ class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
     _GUARDED_PREFIXES = ("/conversations",)
     _GUARDED_SUFFIXES = ("", "/messages", "/select-option", "/business-profile")
 
-    def __init__(self, app) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
         self._hits: dict[str, deque[float]] = defaultdict(deque)
 
@@ -41,7 +55,9 @@ class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
             tail.endswith(s) for s in self._GUARDED_SUFFIXES if s
         )
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         limit = settings.conversation_rate_limit_per_minute
         if limit > 0 and self._is_guarded(request):
             client_ip = request.client.host if request.client else "unknown"
@@ -61,18 +77,43 @@ class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Assigns a request id, times the request, and logs one line per request."""
+    """Assigns a request id, times the request, and emits exactly one
+    structured JSON completion event per request (success or failure) --
+    see app.settings.logging_config.JsonFormatter for the wire format.
+    """
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         start = time.perf_counter()
         response = None
+        base_log_fields = {
+            "service": SERVICE_NAME,
+            "environment": settings.environment,
+            "request_id": request_id,
+            "method": request.method,
+        }
         try:
             response = await call_next(request)
         except Exception:
+            # Routing (request.scope["route"]) happens *inside* call_next, so
+            # the route template is only resolvable after it returns/raises
+            # -- resolving it up front would always yield the raw path.
+            duration_ms = (time.perf_counter() - start) * 1000
+            # exc_info is picked up automatically by logger.exception(); never
+            # pass the exception's str()/args here -- upstream exceptions in
+            # this service (auth, payments) may carry request payloads.
             logger.exception(
-                "request %s failed: %s %s", request_id, request.method, request.url.path
+                "request failed",
+                extra={
+                    **base_log_fields,
+                    "route": _logged_route(request),
+                    "event": "http_request_failed",
+                    "status_code": 500,
+                    "duration_ms": round(duration_ms, 1),
+                },
             )
             raise
         finally:
@@ -97,17 +138,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         assert response is not None
         response.headers["X-Request-ID"] = request_id
         logger.info(
-            "%s %s -> %s (%.1fms) [%s]",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-            request_id,
+            "request completed",
+            extra={
+                **base_log_fields,
+                "route": _logged_route(request),
+                "event": "http_request_completed",
+                "status_code": response.status_code,
+                "duration_ms": round(duration_ms, 1),
+            },
         )
         return response
 
 
-def register_middleware(app) -> None:
+def register_middleware(app: FastAPI) -> None:
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(ConversationRateLimitMiddleware)
     app.add_middleware(

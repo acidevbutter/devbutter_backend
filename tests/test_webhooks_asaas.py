@@ -72,15 +72,14 @@ async def test_webhook_accepts_matching_access_token_for_unknown_payment(
     assert response.status_code == 404
 
 
-# -- ACCOUNT_STATUS_* events are accepted and audited, never acted on -----
-# (subaccount credential lifecycle moved to the asaas_payment proxy)
+# -- ACCOUNT_STATUS_* events update the local AsaasSubaccountLink mirror ---
 
 
-async def test_account_status_event_is_accepted_but_noop(
+async def test_account_status_expiring_soon_updates_link(
     client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):
     monkeypatch.setattr(settings, "asaas_webhook_access_token", WEBHOOK_TOKEN)
-    await _create_link(db_session, "acc_webhook_status")
+    link = await _create_link(db_session, "acc_webhook_status")
 
     response = await client.post(
         "/webhooks/asaas",
@@ -92,3 +91,41 @@ async def test_account_status_event_is_accepted_but_noop(
     )
 
     assert response.status_code == 204
+    await db_session.refresh(link)
+    assert link.onboarding_status == "COMMERCIAL_INFO_EXPIRING"
+    assert link.commercial_info_status == "EXPIRING_SOON"
+
+
+async def test_account_status_general_approval_approved_clears_gate(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setattr(settings, "asaas_webhook_access_token", WEBHOOK_TOKEN)
+    link = await _create_link(db_session, "acc_approved")
+    link.provisioning_status = "PROVISIONED"
+    await db_session.commit()
+
+    response = await client.post(
+        "/webhooks/asaas",
+        json={
+            "id": "evt_approved_1",
+            "event": "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED",
+            "account": {"id": "acc_approved"},
+        },
+        headers={"asaas-access-token": WEBHOOK_TOKEN},
+    )
+    assert response.status_code == 204
+    await db_session.refresh(link)
+    assert link.approval_status == "APPROVED"
+    assert link.onboarding_status == "APPROVED"
+
+    # redelivery of the same event id is a no-op
+    again = await client.post(
+        "/webhooks/asaas",
+        json={
+            "id": "evt_approved_1",
+            "event": "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED",
+            "account": {"id": "acc_approved"},
+        },
+        headers={"asaas-access-token": WEBHOOK_TOKEN},
+    )
+    assert again.status_code == 204

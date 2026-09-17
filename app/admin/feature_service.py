@@ -62,7 +62,7 @@ class FeatureService:
             return existing
 
         link = await self._link_repository.get_by_company(company_id)
-        if link is None:
+        if link is None or link.asaas_account_id is None:
             raise ValidationFailedError("configure o meio de pagamento primeiro")
 
         record = await self._feature_repository.create(
@@ -90,7 +90,7 @@ class FeatureService:
             raise NotFoundError("sells_via_api is not active for this company")
 
         link = await self._link_repository.get_by_company(company_id)
-        if link is not None and active.asaas_access_token_id:
+        if link is not None and link.asaas_account_id is not None and active.asaas_access_token_id:
             await self._payments_service.revoke_access_token(
                 link.asaas_account_id, active.asaas_access_token_id
             )

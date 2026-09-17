@@ -2,6 +2,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from http.cookies import SimpleCookie
+from typing import Any
 
 from app.accounts.repository import AccountRepository
 from app.conversations.models import Conversation
@@ -52,7 +53,7 @@ async def _socket_auth_from_token(access_token: str | None) -> SocketAuth | None
     )
 
 
-async def _socket_auth_from_cookie(environ: dict) -> SocketAuth | None:
+async def _socket_auth_from_cookie(environ: dict[str, Any]) -> SocketAuth | None:
     """Browser Socket.IO clients can't set an Authorization header on the
     initial engineio handshake, so auth here piggybacks on the same httpOnly
     cookie the frontend already sends with portal REST calls (sent cross-origin
@@ -97,19 +98,19 @@ def _is_authorized(conversation: Conversation, account_id: uuid.UUID | None) -> 
     return account_id == conversation.account_id
 
 
-@sio.event
-async def connect(sid, environ, auth=None):
+@sio.event  # type: ignore[untyped-decorator]
+async def connect(sid: str, environ: dict[str, Any], auth: Any = None) -> None:
     _socket_accounts[sid] = await _socket_auth_from_cookie(environ)
 
 
-@sio.event
-async def disconnect(sid):
+@sio.event  # type: ignore[untyped-decorator]
+async def disconnect(sid: str) -> None:
     _socket_accounts.pop(sid, None)
     _socket_conversations.pop(sid, None)
 
 
-@sio.event
-async def join_conversation(sid, data):
+@sio.event  # type: ignore[untyped-decorator]
+async def join_conversation(sid: str, data: dict[str, Any]) -> dict[str, Any]:
     """Returns an ack dict ({"ok": bool, "detail": ...}) rather than emitting a
     separate event -- the client awaits this ack before calling send_message,
     which avoids a real race: with async_handlers on (the default), a
@@ -140,7 +141,7 @@ async def join_conversation(sid, data):
     return {"ok": True}
 
 
-def _clean_selection(raw: object) -> dict | None:
+def _clean_selection(raw: object) -> dict[str, Any] | None:
     """Accept only a well-formed {field: str, option_ids: [str, ...]} from the
     browser -- anything else is dropped rather than persisted as-is."""
     if not isinstance(raw, dict):
@@ -155,8 +156,8 @@ def _clean_selection(raw: object) -> dict | None:
     return {"field": field, "option_ids": ids}
 
 
-@sio.event
-async def send_message(sid, data):
+@sio.event  # type: ignore[untyped-decorator]
+async def send_message(sid: str, data: dict[str, Any]) -> None:
     raw_conversation_id = data.get("conversation_id")
     content = data.get("content", "")
     selection = _clean_selection(data.get("selection"))

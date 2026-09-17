@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.accounts.models import User
 from app.conversations import socket_handlers
 from app.conversations.repository import ConversationRepository
+from app.conversations.socket_server import sio
 from app.core.security import TokenType, decode_token
 from app.settings.config import settings
 from tests.conftest import signup
@@ -60,8 +61,8 @@ async def test_join_then_send_message_streams_chunks_then_done(client, db_sessio
     )
     emit_mock = AsyncMock()
     enter_room_mock = AsyncMock()
-    monkeypatch.setattr(socket_handlers.sio, "emit", emit_mock)
-    monkeypatch.setattr(socket_handlers.sio, "enter_room", enter_room_mock)
+    monkeypatch.setattr(sio, "emit", emit_mock)
+    monkeypatch.setattr(sio, "enter_room", enter_room_mock)
 
     sid = "sid-owner"
     await socket_handlers.connect(sid, _cookie_environ(tokens["access_token"]))
@@ -102,8 +103,8 @@ async def test_join_rejects_conversation_owned_by_another_account(client, db_ses
     _patch_shared_session(monkeypatch, db_session)
     emit_mock = AsyncMock()
     enter_room_mock = AsyncMock()
-    monkeypatch.setattr(socket_handlers.sio, "emit", emit_mock)
-    monkeypatch.setattr(socket_handlers.sio, "enter_room", enter_room_mock)
+    monkeypatch.setattr(sio, "emit", emit_mock)
+    monkeypatch.setattr(sio, "enter_room", enter_room_mock)
 
     sid = "sid-stranger"
     await socket_handlers.connect(sid, _cookie_environ(stranger_tokens["access_token"]))
@@ -138,8 +139,8 @@ async def test_visitor_without_cookie_can_join_unclaimed_conversation(
     _patch_shared_session(monkeypatch, db_session)
     emit_mock = AsyncMock()
     enter_room_mock = AsyncMock()
-    monkeypatch.setattr(socket_handlers.sio, "emit", emit_mock)
-    monkeypatch.setattr(socket_handlers.sio, "enter_room", enter_room_mock)
+    monkeypatch.setattr(sio, "emit", emit_mock)
+    monkeypatch.setattr(sio, "enter_room", enter_room_mock)
 
     sid = "sid-visitor"
     await socket_handlers.connect(sid, _cookie_environ(None))

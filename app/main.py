@@ -14,6 +14,7 @@ from app.conversations import socket_handlers  # noqa: F401  (registers Socket.I
 from app.conversations.router import router as conversations_router
 from app.conversations.socket_server import sio
 from app.core.clients.asaas_client import close_asaas_client
+from app.core.clients.butter_blob_client import close_butter_blob_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
 from app.core.metrics import configure_metrics, emit_metrics
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     await close_asaas_client()
     await close_butter_mind_client()
+    await close_butter_blob_client()
 
 
 app = FastAPI(

@@ -1,9 +1,11 @@
 import hashlib
 import json
+import logging
 from collections.abc import Callable
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 
-from app.accounts.repository import AccountRepository
+from app.accounts.repository import AccountRepository, AsaasSubaccountLinkRepository
 from app.core.decorators import log_errors
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.metrics import emit_metrics
@@ -12,9 +14,21 @@ from app.nfse.service import NfseService
 from app.notifications.service import NotificationService
 from app.orders.repository import OrderRepository
 from app.payment_methods.repository import PaymentMethodRepository
+from app.subaccounts_provisioning.service import SubaccountProvisioningService
 from app.webhooks.models import WebhookEvent
 from app.webhooks.repository import WebhookEventRepository
 from app.webhooks.schemas import AsaasWebhookEvent
+
+logger = logging.getLogger(__name__)
+
+# Maps the dimension segment of an ACCOUNT_STATUS_* event to the
+# AsaasSubaccountLink column it updates.
+_ACCOUNT_STATUS_DIMENSIONS = {
+    "BANK_ACCOUNT_INFO": "bank_account_info_status",
+    "COMMERCIAL_INFO": "commercial_info_status",
+    "DOCUMENT": "documentation_status",
+    "GENERAL_APPROVAL": "approval_status",
+}
 
 # Asaas payment status -> local Invoice.status. Unmapped statuses pass through
 # unchanged so a new Asaas status doesn't silently get dropped.
@@ -50,7 +64,7 @@ def _redact_invoice_document_urls(payload: dict[str, Any]) -> dict[str, Any]:
             return [_walk(item) for item in value]
         return value
 
-    return _walk(payload)
+    return cast(dict[str, Any], _walk(payload))
 
 
 @log_errors
@@ -65,6 +79,8 @@ class WebhookService:
         payment_method_repository: PaymentMethodRepository | None = None,
         nfse_service: NfseService | None = None,
         nfse_factory: Callable[[], NfseService] | None = None,
+        subaccount_link_repository: AsaasSubaccountLinkRepository | None = None,
+        provisioning_service: SubaccountProvisioningService | None = None,
     ):
         self.invoice_repository = invoice_repository
         self.order_repository = order_repository
@@ -74,6 +90,8 @@ class WebhookService:
         self.payment_method_repository = payment_method_repository
         self._nfse_service = nfse_service
         self._nfse_factory = nfse_factory
+        self.subaccount_link_repository = subaccount_link_repository
+        self.provisioning_service = provisioning_service
 
     def _nfse(self) -> NfseService | None:
         if self._nfse_service is None and self._nfse_factory is not None:
@@ -84,13 +102,19 @@ class WebhookService:
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
     ) -> WebhookEvent:
         await emit_metrics({"EventType": event.event}, [("WebhookReceived", 1, "Count")])
+        emitter_id = raw_payload.get("id")
+        event_id = emitter_id if isinstance(emitter_id, str) and emitter_id else None
+        if event_id is not None:
+            existing = await self.event_repository.get_by_event_id(event_id)
+            if existing is not None:
+                # "At least once" delivery -- Asaas can redeliver the same
+                # event. Already recorded => accept and no-op.
+                return existing
         invoice = (
             await self.invoice_repository.get_by_asaas_invoice_id(event.payment.id)
             if event.payment is not None and not event.event.startswith("INVOICE_")
             else None
         )
-        emitter_id = raw_payload.get("id")
-        event_id = emitter_id if isinstance(emitter_id, str) and emitter_id else None
         stored_payload = _redact_invoice_document_urls(raw_payload)
         try:
             audit_event = await self.event_repository.create(
@@ -131,15 +155,18 @@ class WebhookService:
         return processed
 
     async def _dispatch(self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]) -> None:
-        """PAYMENT_* events go through the Invoice/Order reconciliation
-        below. Everything else -- ACCOUNT_STATUS_* and any event carrying no
-        `payment` -- is accepted (200/204) and audited but otherwise a
-        no-op: Asaas's "at least once" delivery and evolving payload rules
-        mean unknown events must never fail the webhook
-        (00-levantamento-tecnico.md item B7). Subaccount credential
-        lifecycle is no longer handled here -- the asaas_payment proxy owns
-        it.
+        """PAYMENT_* events go through the Invoice/Order reconciliation below.
+        ACCOUNT_STATUS_* events update the local AsaasSubaccountLink mirror
+        (onboarding/approval situation). INVOICE_* events go through NFS-e
+        issuance. Anything else is accepted, audited, and a no-op -- Asaas's
+        "at least once" delivery and evolving payload rules mean unknown
+        events must never fail the webhook (00-levantamento-tecnico.md item
+        B7). Subaccount *credential* lifecycle stays with the asaas_payment
+        proxy.
         """
+        if event.event.startswith("ACCOUNT_STATUS_"):
+            await self._handle_account_status_event(event)
+            return
         if event.event.startswith("INVOICE_"):
             nfse = self._nfse()
             if nfse is not None:
@@ -147,6 +174,76 @@ class WebhookService:
             return
         if event.payment is not None:
             await self.handle_payment_event(event, raw_payload)
+
+    async def _handle_account_status_event(self, event: AsaasWebhookEvent) -> None:
+        if self.subaccount_link_repository is None:
+            return
+        account_id = (event.account or {}).get("id")
+        if not account_id:
+            return
+        link = await self.subaccount_link_repository.get_by_asaas_account_id(str(account_id))
+        if link is None:
+            # A subaccount this backend didn't provision (another consumer).
+            return
+
+        suffix = event.event[len("ACCOUNT_STATUS_") :]
+        new_status: str | None = None
+        for dimension, column in _ACCOUNT_STATUS_DIMENSIONS.items():
+            if suffix.startswith(dimension + "_"):
+                new_status = suffix[len(dimension) + 1 :]
+                setattr(link, column, new_status)
+                break
+
+        if event.event == "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED":
+            link.approval_status = "APPROVED"
+            link.onboarding_status = "APPROVED"
+        elif event.event == "ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED":
+            link.onboarding_status = "REJECTED"
+        elif event.event in {
+            "ACCOUNT_STATUS_DOCUMENT_PENDING",
+            "ACCOUNT_STATUS_DOCUMENT_REJECTED",
+        }:
+            link.onboarding_status = "PENDING_DOCUMENTS"
+        elif event.event == "ACCOUNT_STATUS_COMMERCIAL_INFO_EXPIRING_SOON":
+            link.onboarding_status = "COMMERCIAL_INFO_EXPIRING"
+            link.commercial_info_expires_at = self._read_expiration(event)
+            await self._notify_commercial_info_expiring(link)
+        elif event.event == "ACCOUNT_STATUS_COMMERCIAL_INFO_EXPIRED":
+            link.onboarding_status = "COMMERCIAL_INFO_EXPIRED"
+            await self._notify_commercial_info_expiring(link)
+
+        await self.subaccount_link_repository.update(link)
+        await emit_metrics({"EventType": event.event}, [("SubaccountStatusUpdated", 1, "Count")])
+
+    @staticmethod
+    def _read_expiration(event: AsaasWebhookEvent) -> datetime | None:
+        raw = (event.account or {}).get("commercialInfoExpiration") or {}
+        scheduled = raw.get("scheduledDate") if isinstance(raw, dict) else None
+        if not scheduled:
+            return None
+        try:
+            return datetime.fromisoformat(str(scheduled).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    async def _notify_commercial_info_expiring(self, link: Any) -> None:
+        try:
+            company = await self.account_repository.get_company(link.company_id)
+            if company is None:
+                return
+            user = await self.account_repository.get_user(company.user_id)
+            if user is None:
+                return
+            scheduled = (
+                link.commercial_info_expires_at.isoformat()
+                if link.commercial_info_expires_at
+                else None
+            )
+            self.notification_service.notify_commercial_info_expiring(
+                user, company.name, scheduled
+            )
+        except Exception:  # pragma: no cover - best effort
+            logger.exception("commercial-info-expiring notification could not be queued")
 
     async def handle_payment_event(
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
@@ -188,6 +285,28 @@ class WebhookService:
         nfse = self._nfse()
         if nfse is not None:
             await nfse.enqueue_from_paid_invoice(invoice)
+
+        if new_status == "PAID":
+            await self._maybe_provision_subaccount(company.id)
+
+    async def _maybe_provision_subaccount(self, company_id: Any) -> None:
+        """On a Company's first paid Layer A invoice, open its Asaas
+        subaccount (docs/architecture/adr-0002 revised trigger). Idempotent:
+        SubaccountProvisioningService no-ops when a link already exists, and
+        we only reach here on the first PAID invoice anyway. Never raises --
+        a provisioning problem must not fail the payment webhook."""
+        if self.provisioning_service is None or self.subaccount_link_repository is None:
+            return
+        try:
+            if await self.subaccount_link_repository.get_by_company(company_id) is not None:
+                return
+            if await self.invoice_repository.count_paid_invoices_for_company(company_id) > 1:
+                return
+            await self.provisioning_service.provision(company_id, actor="webhook:first_payment")
+        except Exception:
+            logger.exception(
+                "first-payment subaccount provisioning failed for company %s", company_id
+            )
 
     async def _reconcile_payment_attempts(self, invoice_id: Any, new_status: str) -> None:
         """Real fix for Phase-3 item 6 (webhook wiring): a saved-card

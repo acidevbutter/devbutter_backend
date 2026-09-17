@@ -1,5 +1,5 @@
 import uuid
-from typing import Any, cast
+from typing import Any
 
 from app.conversations.repository import ConversationRepository
 from app.core.clients.butter_mind_client import ButterMindClient
@@ -16,22 +16,22 @@ class AdminMindService:
         self.mind_client = mind_client
 
     async def dashboard_overview(self) -> dict[str, Any]:
-        return cast(dict[str, Any], await self.mind_client.get_dashboard_overview())
+        return await self.mind_client.get_dashboard_overview()
 
     async def governance(self) -> dict[str, Any]:
-        return cast(dict[str, Any], await self.mind_client.get_dashboard_settings())
+        return await self.mind_client.get_dashboard_settings()
 
     async def update_governance(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return cast(dict[str, Any], await self.mind_client.update_dashboard_settings(payload))
+        return await self.mind_client.update_dashboard_settings(payload)
 
     async def llm_usage_summary(self) -> dict[str, Any]:
-        return cast(dict[str, Any], await self.mind_client.get_llm_usage_summary())
+        return await self.mind_client.get_llm_usage_summary()
 
     async def llm_budget(self, flow: str) -> dict[str, Any] | None:
-        return cast(dict[str, Any] | None, await self.mind_client.get_llm_budget(flow))
+        return await self.mind_client.get_llm_budget(flow)
 
     async def update_llm_budget(self, flow: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return cast(dict[str, Any], await self.mind_client.update_llm_budget(flow, payload))
+        return await self.mind_client.update_llm_budget(flow, payload)
 
     async def conversation_turn_metrics(self, conversation_id: uuid.UUID) -> list[dict[str, Any]]:
         conversation = await self.conversations.get(conversation_id)
@@ -39,7 +39,4 @@ class AdminMindService:
             raise NotFoundError("Conversation not found")
         if not conversation.mind_session_id:
             return []
-        return cast(
-            list[dict[str, Any]],
-            await self.mind_client.get_diagnosis_turn_metrics(conversation.mind_session_id),
-        )
+        return await self.mind_client.get_diagnosis_turn_metrics(conversation.mind_session_id)

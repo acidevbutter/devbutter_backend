@@ -1,0 +1,178 @@
+%% Mapa corrente da API, derivado de /openapi.json local em 2026-09-08.
+%% IDs PW-* são a matriz inicial para testes de integração com Playwright.
+%% Os testes de browser usam a interface; webhooks e mTLS usam request/APIRequestContext
+%% ou doubles controlados. Nenhum PW-* implica chamada real a Asaas, Brevo ou Mind.
+flowchart TB
+    Client[Cliente ou frontend]
+    Admin[Operador admin]
+    API[devbutter_backend]
+    DB[(PostgreSQL)]
+    Mind[butter_mind]
+    Relay[butter_relay e SQS]
+    Email[Provedor de e-mail]
+    AsaasPayment[asaas_payment por mTLS]
+    Asaas[Asaas]
+
+    Client --> API
+    Admin --> API
+    API --> DB
+    API --> Mind
+    API --> Relay
+    Relay --> Email
+    API --> AsaasPayment
+    AsaasPayment --> Asaas
+    Asaas -->|POST /webhooks/asaas| API
+
+    subgraph Health[Disponibilidade]
+        H1[GET /health]
+        H2[GET /health/ready - consulta DB]
+    end
+    Client --> H1
+    Client --> H2
+    H2 --> DB
+
+    subgraph Identity[Identidade, conta e tokens]
+        A1[PW-AUTH-01<br/>POST /accounts/signup<br/>cria User, Company, Account e par JWT]
+        A2[PW-AUTH-02<br/>POST /accounts/login<br/>emite par JWT]
+        A3[PW-AUTH-03<br/>POST /accounts/refresh<br/>valida tipo, conta e session_version]
+        A4[PW-AUTH-04<br/>POST /accounts/select<br/>troca conta ativa e emite novo par JWT]
+        A5[GET/PATCH /accounts/me<br/>GET/POST /accounts e /accounts/companies]
+        A6[PW-AUTH-05<br/>GET /accounts/password-setup/:token<br/>POST /accounts/password-setup<br/>consome token e emite JWT]
+        A7[PW-AUTH-06<br/>POST /accounts/password-recovery<br/>gera token de uso único com hash persistido]
+        A8[GET /accounts/password-recovery/:token<br/>POST /accounts/password-recovery/complete<br/>consome token, incrementa session_version e emite JWT]
+    end
+    Client --> A1
+    Client --> A2
+    Client --> A3
+    Client --> A4
+    Client --> A5
+    Client --> A6
+    Client --> A7
+    Client --> A8
+    A1 --> DB
+    A2 --> DB
+    A3 --> DB
+    A4 --> DB
+    A5 --> DB
+    A6 --> DB
+    A7 --> DB
+    A8 --> DB
+    A7 -->|devbutter_password_recovery| Relay
+
+    subgraph Quote[Conversa e cotação]
+        Q1[PW-QUOTE-01<br/>POST /conversations<br/>cria sessão Mind e Conversation local]
+        Q2[PW-QUOTE-02<br/>POST /conversations/:id/messages<br/>ou Socket.IO; espelha transcript e preview]
+        Q3[POST /conversations/:id/select-option<br/>PATCH /conversations/:id/business-profile]
+        Q4[PW-QUOTE-03<br/>POST /conversations/:id/draft-quote<br/>submete diagnóstico estruturado]
+        Q5{Conversation já possui account_id?}
+        Q6[PW-QUOTE-04<br/>Conta visitante nova<br/>cria User, Company, Account e JWT]
+        Q7[PW-QUOTE-05<br/>E-mail existente<br/>vincula Quote sem auto-login]
+        Q8[Cria Quote source=ai em draft]
+        Q9[PW-QUOTE-06<br/>Novo usuário: cria password-setup token quando necessário]
+        Q10[GET /quotes e /quotes/:id<br/>cliente vê preço somente após aprovação]
+        Q11[PW-QUOTE-07<br/>POST /quotes/manual<br/>admin cria Quote source=manual em draft]
+    end
+    Client --> Q1 --> Mind
+    Q1 --> DB
+    Client --> Q2 --> Mind
+    Q2 --> DB
+    Client --> Q3 --> Mind
+    Q3 --> DB
+    Client --> Q4 --> Mind
+    Q4 --> Q5
+    Q5 -->|não| Q6 --> Q8
+    Q5 -->|sim| Q8
+    Q5 -->|e-mail já existe| Q7 --> Q8
+    Q6 --> Q9 -->|devbutter_quote_received| Relay
+    Q7 -->|devbutter_pending_account_link| Relay
+    Q8 --> DB
+    Client --> Q10
+    Admin --> Q11 --> DB
+
+    subgraph Approval[Aprovação, pedido, fatura e e-mail]
+        R1[GET /admin/quotes e /admin/quotes/all<br/>PATCH /admin/quotes/:id<br/>POST /reject]
+        R2[PW-APPROVAL-01<br/>POST /admin/quotes/:id/approve<br/>valida draft ou edited e marca Quote approved]
+        R3[Cria Order]
+        R4{AsaasCustomerLink existe?}
+        R5[Cria cliente Asaas]
+        R6[Cria cobrança Asaas com externalReference do Order]
+        R7[Cria Invoice local e Order invoiced]
+        R8[PW-APPROVAL-02<br/>publica devbutter_quote_approved<br/>com link de pagamento]
+        R9[GET /orders, /orders/:id, /orders/:id/invoices e /invoices]
+    end
+    Admin --> R1 --> DB
+    Admin --> R2 --> R3 --> DB
+    R3 --> R4
+    R4 -->|não| R5 --> AsaasPayment
+    R4 -->|sim| R6
+    R5 --> R6 --> AsaasPayment
+    R6 --> R7 --> DB
+    R7 --> R8 --> Relay
+    Client --> R9 --> DB
+
+    subgraph Card[Cartão salvo e cobrança]
+        P1[PW-PAY-01<br/>POST /payment-methods/session<br/>fixa conta, finalidade, invoice, valor, kid, nonce e expiração]
+        P2[PW-PAY-02<br/>POST /payment-methods<br/>recebe envelope AES-GCM v1]
+        P3[Consome contexto unused para processing para consumed<br/>valida ownership, nonce, método, caminho e replay]
+        P4[Tokeniza cartão no Asaas e persiste apenas token cifrado e metadados]
+        P5[GET /payment-methods<br/>DELETE /payment-methods/:id]
+        P6[PW-PAY-03<br/>POST /payments<br/>cria PaymentAttempt por chave de idempotência]
+        P7[POST /admin/payment-methods/reconcile]
+    end
+    Client --> P1 --> DB
+    Client --> P2 --> P3 --> P4
+    P4 --> AsaasPayment
+    P4 --> DB
+    Client --> P5 --> DB
+    Client --> P6 --> AsaasPayment
+    P6 --> DB
+    Admin --> P7 --> AsaasPayment
+    P7 --> DB
+
+    subgraph Webhooks[Webhook Asaas e pós-pagamento]
+        W1[PW-WEBHOOK-01<br/>POST /webhooks/asaas<br/>valida asaas-access-token e audita evento]
+        W2{Evento INVOICE?}
+        W3[Aplica webhook de NFS-e quando configurado]
+        W4{Possui payment?}
+        W5[Atualiza Invoice e reconcilia PaymentAttempt]
+        W6{Status alterou?}
+        W7[Publica devbutter_payment_status_changed]
+        W8[Enfileira NFS-e para invoice paga quando configurado]
+        W9[GET /admin/webhooks/events e /:id<br/>POST /:id/reprocess]
+    end
+    Asaas --> W1 --> DB
+    W1 --> W2
+    W2 -->|sim| W3
+    W2 -->|não| W4
+    W4 -->|sim| W5 --> DB
+    W5 --> W6
+    W6 -->|sim| W7 --> Relay
+    W6 -->|sim| W8
+    Admin --> W9 --> DB
+
+    subgraph AdminAPI[Administração autenticada]
+        M1[GET/PATCH /admin/mind/*<br/>overview, settings, usage, budgets e turn-metrics]
+        M2[GET /admin/clients, /orders, /invoices, /dashboard,<br/>/catalog e /conversations]
+        M3[GET/POST/PATCH/DELETE /admin/knowledge-entries]
+        M4[GET /admin/companies, /:id, features e split-quota<br/>POST /:id/link-subaccount]
+        M5[PW-ADMIN-01<br/>/admin/subaccounts, access-tokens, split-rules,<br/>payments, refund, cancel e audit-logs]
+    end
+    Admin --> M1 --> Mind
+    Admin --> M2 --> DB
+    Admin --> M3 --> DB
+    Admin --> M4 --> DB
+    Admin --> M5 --> AsaasPayment
+
+    subgraph Catalog[Catálogo]
+        C1[PW-CATALOG-01<br/>GET/POST /service-catalog<br/>PATCH/DELETE /service-catalog/:id]
+    end
+    Client --> C1 --> DB
+
+%% Cobertura mínima Playwright derivada deste mapa:
+%% AUTH-01..06: signup/login/refresh/select/setup/recovery; observar e-mail em ambiente Relay/Mailpit.
+%% QUOTE-01..07: visitante, conversa, revisão, conta nova/existente, preço oculto e criação manual.
+%% APPROVAL-01..02: aprovação cria Order+Invoice e publica notificação; provider deve ser double controlado.
+%% PAY-01..03: contexto, envelope/replay e pagamento idempotente; usar chave de teste, nunca PAN real.
+%% WEBHOOK-01: APIRequestContext com token de teste, redelivery e auditoria. Hoje bloqueado no teste local
+%% quando NFS-e inicializa cliente mTLS usando /app/certs/ca.crt fora do container.
+%% ADMIN-01 e CATALOG-01: autorização admin/tenant e operações CRUD/Asaas via double.

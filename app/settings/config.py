@@ -1,16 +1,9 @@
+import os
 from typing import Literal
+from urllib.parse import quote
 
-from dotenv import load_dotenv
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# pydantic-settings parses .env into this Settings object only -- it never
-# touches os.environ. boto3 (core/clients/relay_client.py) reads AWS
-# credentials directly from the real process environment, so when running
-# locally via `poetry run uvicorn` (not docker-compose's own `env_file:`,
-# which does populate real container env vars) .env needs to be loaded here
-# too. load_dotenv() never overrides a variable already set in the real
-# environment, matching pydantic-settings' own precedence.
-load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -20,7 +13,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: Literal["development", "staging", "preprod", "production"] = "development"
 
-    database_url: str = "postgresql+asyncpg://platform:platform@shared-postgres:5432/platform"
+    database_host: str = "shared-postgres"
+    database_port: int = 5432
+    database_user: str = "platform"
+    database_password: str = "platform"
+    database_name: str = "platform"
 
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
 
@@ -67,16 +64,24 @@ class Settings(BaseSettings):
     butter_mind_internal_api_key: str = ""
     butter_mind_service_api_key: str = ""
 
+    # -- core/clients/butter_blob_client.py: DevButter's blob store, same Docker
+    # network (`blob-api`). Namespace-scoped: butter_blob binds every blob to
+    # butter_blob_namespace and the service key authenticates the caller.
+    butter_blob_base_url: str = "http://blob-api:8000"
+    butter_blob_request_timeout_seconds: float = 30.0
+    butter_blob_service_api_key: str = ""
+    butter_blob_namespace: str = "devbutter_backend"
+
     # -- conversations: per-IP rate limit for the anonymous concierge funnel
     # (ADR-0004) so it can't be turned into an open LLM tap. 0 disables it.
     conversation_rate_limit_per_minute: int = 20
 
-    # -- core/clients/relay_client.py: boto3 SQS publish into butter_relay's
-    # shared queue. project_id identifies the "devbutter-platform" Project
-    # registered in the relay admin (see notifications/service.py).
-    aws_region: str = "us-east-1"
-    relay_sqs_queue_url: str = ""
-    relay_sqs_endpoint_url: str | None = None
+    # -- core/clients/relay_client.py: Celery send_task into butter_relay's
+    # shared queue (same Redis broker relay's own worker consumes from).
+    # project_id identifies the "devbutter-platform" Project registered in
+    # the relay admin (see notifications/service.py).
+    redis_url: str = ""
+    relay_queue_name: str = "relay-shared"
     relay_project_id: str = ""
 
     # NFS-e (Layer A originator). Empty subaccount id means "do not emit".
@@ -85,15 +90,59 @@ class Settings(BaseSettings):
     asaas_nfse_municipal_service_code: str = ""
     asaas_nfse_municipal_service_name: str = ""
     asaas_nfse_service_description: str = "Serviços de desenvolvimento de software"
-    butter_blob_base_url: str = ""
     butter_blob_api_key: str = ""
-    butter_blob_namespace: str = "nfse"
+    nfse_blob_namespace: str = "nfse"
     butter_blob_timeout_seconds: float = 30.0
     nfse_email_logo_url: str = "https://devbutter.com/logo.png"
 
     # Asaas webhook receiver -- validates the `asaas-access-token` header.
     # See https://docs.asaas.com/docs/duvidas-frequentes-webhooks
     asaas_webhook_access_token: str = ""
+
+    # Publicly reachable base URL of THIS backend, used to register the
+    # subaccount's ACCOUNT_STATUS_* webhook on Asaas (webhooks[].url in the
+    # POST /subaccounts body). No trailing slash. Provisioning refuses to run
+    # with this empty so a subaccount is never created without a status
+    # webhook wired back.
+    backend_public_base_url: str = ""
+    # Optional address put on webhooks[].email so Asaas notifies ops of
+    # delivery problems; falls back to the account owner's email when unset.
+    asaas_webhook_ops_email: str = ""
+
+    @property
+    def database_url(self) -> str:
+        user = quote(self.database_user, safe="")
+        password = quote(self.database_password, safe="")
+        return (
+            f"postgresql+asyncpg://{user}:{password}"
+            f"@{self.database_host}:{self.database_port}/{self.database_name}"
+        )
+
+    @model_validator(mode="after")
+    def reject_legacy_database_url_outside_dev(self) -> "Settings":
+        if self.environment != "development" and os.environ.get("DATABASE_URL"):
+            raise ValueError(
+                "DATABASE_URL is no longer read; set DATABASE_HOST, DATABASE_PORT, "
+                "DATABASE_USER, DATABASE_PASSWORD and DATABASE_NAME"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def reject_dev_secrets_outside_development(self) -> "Settings":
+        if self.environment == "development":
+            return self
+        defaults = type(self).model_fields
+        if self.jwt_secret == defaults["jwt_secret"].default:
+            raise ValueError(
+                "JWT_SECRET must not be left at its development default outside development"
+            )
+        if self.database_password == defaults["database_password"].default:
+            raise ValueError(
+                "DATABASE_PASSWORD must not be left at its development default outside development"
+            )
+        if not self.payment_token_encryption_key:
+            raise ValueError("PAYMENT_TOKEN_ENCRYPTION_KEY must be set outside development")
+        return self
 
     @property
     def payment_payload_keyring_dict(self) -> dict[str, str]:

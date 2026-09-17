@@ -1,0 +1,74 @@
+name: Backend quality
+
+on:
+  pull_request:
+  merge_group:
+  push:
+
+concurrency:
+  group: backend-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Poetry
+        run: pipx install poetry==1.8.3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: poetry
+      - run: poetry install --no-root
+      - name: Generate throwaway mTLS test certs
+        # tests/test_asaas_client.py points AsaasClient at certs/ so
+        # httpx.AsyncClient's constructor has real PEM files to load --
+        # no request in that file leaves the process, so a self-signed
+        # placeholder (not the real dev CA from asaas_payment's
+        # generate_dev_certs.sh) is enough.
+        run: |
+          mkdir -p certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout certs/devbutter-platform.key \
+            -out certs/devbutter-platform.crt \
+            -subj "/CN=devbutter-platform"
+          cp certs/devbutter-platform.crt certs/ca.crt
+      - run: poetry run ruff check .
+      - run: poetry run mypy .
+      - run: poetry run pytest
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: test
+      DATABASE_PASSWORD: test
+      DATABASE_NAME: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Poetry
+        run: pipx install poetry==1.8.3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: poetry
+      - run: poetry install --no-root
+      # Runs against a fresh database every time, so it catches broken
+      # revisions and multiple-heads conflicts before they reach Coolify.
+      - run: poetry run alembic upgrade head

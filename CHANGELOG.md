@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+- Removidas as variáveis `AWS_EMF_*` de `.env.example`, que não eram mais
+  lidas por nada desde a migração de `core/metrics.py` para logs JSON
+  estruturados. Corrigidos os últimos comentários residuais que ainda citavam
+  CloudWatch/EMF (`core/metrics.py`, `settings/logging_config.py`) para
+  descrever o pipeline atual (stdout → New Relic `nrdot-collector` na VPS).
+
+- Observabilidade HTTP normalizada: `RequestContextMiddleware`
+  (`app/settings/middleware.py`) agora emite exatamente um evento JSON
+  estruturado por requisição (`app.settings.logging_config.JsonFormatter`),
+  sucesso ou falha, com `timestamp`, `level`, `logger`, `event`, `service`,
+  `environment`, `request_id`, `method`, `route` (template casado, ex.
+  `/accounts/{id}`, nunca o path cru quando a rota casa), `status_code` e
+  `duration_ms`; falhas não tratadas preservam traceback via
+  `logger.exception` sem nunca logar payload/credenciais. `uvicorn.access` é
+  silenciado (`WARNING`, `propagate=False`) para não duplicar essa linha —
+  corrige uma duplicação real de log a cada requisição.
+
+- Conexão Postgres passa a ser `DATABASE_HOST` / `PORT` / `USER` / `PASSWORD` /
+  `NAME`; o Pydantic monta `postgresql+asyncpg://`. `DATABASE_URL` residual
+  impede o boot fora de development.
+
 - Imagem de deploy renomeada para `Dockerfile.hostinger` (Python 3.12, `curl` para healthcheck do Coolify).
 
 - Alinhado o esquema local de clientes, faturas e webhooks ao espelho canônico

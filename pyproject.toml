@@ -12,19 +12,18 @@ fastapi = "^0.115.0"
 uvicorn = { extras = ["standard"], version = "^0.30.0" }
 pydantic = { extras = ["email"], version = "^2.9.0" }
 pydantic-settings = "^2.5.0"
-python-dotenv = "^1.0.1"
 sqlalchemy = "^2.0.35"
 greenlet = "^3.1.0"
 alembic = "^1.13.0"
 asyncpg = "^0.29.0"
 psycopg2-binary = "^2.9.9"
 httpx = { extras = ["http2"], version = "^0.27.0" }
-boto3 = "^1.35.0"
+celery = { extras = ["redis"], version = "^5.4.0" }
 bcrypt = "^4.2.0"
 cryptography = "^43.0.0"
 pyjwt = "^2.9.0"
 python-socketio = "^5.16.4"
-aws-embedded-metrics = "^3.5.0"
+python-multipart = "^0.0.32"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -33,7 +32,6 @@ ruff = "^0.6.0"
 mypy = "^1.11.0"
 aiosqlite = "^0.20.0"
 respx = "^0.21.1"
-moto = { extras = ["sqs"], version = "^5.0.0" }
 
 [build-system]
 requires = ["poetry-core"]
@@ -47,10 +45,38 @@ extend-exclude = ["alembic/versions"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+# The project has a top-level `alembic/` dir, which makes isort mistake the
+# installed `alembic` package for first-party code.
+known-third-party = ["alembic"]
+
 [tool.mypy]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 strict = true
+# Alembic's own `revision merge` template always types down_revision as
+# Union[str, None] even for a merge (a tuple of revisions) -- generated
+# boilerplate, not hand-authored code.
+exclude = "^alembic/versions/"
+
+[[tool.mypy.overrides]]
+# socketio/asyncpg/celery ship no type information.
+module = ["socketio.*", "asyncpg.*", "celery.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Tests take untyped pytest fixtures and lean on runtime validation (Pydantic,
+# monkeypatch) over static typing by design -- not held to the same strict
+# bar as application code.
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+disallow_any_generics = false
+warn_return_any = false
+implicit_reexport = true
+strict_optional = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
