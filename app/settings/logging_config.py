@@ -26,7 +26,7 @@ class JsonFormatter(logging.Formatter):
     def _utc_converter(seconds: float | None = None) -> struct_time:
         return time.gmtime(seconds)
 
-    converter = _utc_converter  # UTC timestamps in logs, matching CloudWatch.
+    converter = _utc_converter  # UTC timestamps in logs, matching New Relic's ingestion.
 
     def format(self, record: logging.LogRecord) -> str:
         if record.name == "metrics":

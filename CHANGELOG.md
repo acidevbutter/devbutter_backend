@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Removidas as variáveis `AWS_EMF_*` de `.env.example`, que não eram mais
+  lidas por nada desde a migração de `core/metrics.py` para logs JSON
+  estruturados. Corrigidos os últimos comentários residuais que ainda citavam
+  CloudWatch/EMF (`core/metrics.py`, `settings/logging_config.py`) para
+  descrever o pipeline atual (stdout → New Relic `nrdot-collector` na VPS).
+
 - Observabilidade HTTP normalizada: `RequestContextMiddleware`
   (`app/settings/middleware.py`) agora emite exatamente um evento JSON
   estruturado por requisição (`app.settings.logging_config.JsonFormatter`),

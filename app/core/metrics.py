@@ -43,10 +43,10 @@ async def emit_metrics(
     failures to affect work.
 
     This ships as a single JSON line via the standard `logging` module
-    instead of CloudWatch EMF: the same ECS `awslogs` -> CloudWatch Logs
-    pipeline this service already ships request logs through forwards to
-    New Relic's log ingestion, which auto-parses JSON log lines and promotes
-    their top-level keys to queryable log attributes -- no agent, no new
+    instead of CloudWatch EMF: this service's stdout is picked up by the New
+    Relic OpenTelemetry collector (nrdot-collector) running on the host, which
+    classifies log lines by their `message` field and routes metric events to
+    New Relic's `Log_metric` partition -- no agent-side SDK, no new
     dependency.
     """
     try:
