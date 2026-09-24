@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Adicionada instrumentação OpenTelemetry de FastAPI, HTTPX e SQLAlchemy, com
+  traces e métricas APM enviados por OTLP/HTTP diretamente ao New Relic quando
+  `OTEL_ENABLED=true`. O stdout passa a usar logfmt legível e mantém os atributos
+  estruturados; a chave de licença existe apenas no ambiente de execução.
+  A convenção HTTP estável (`OTEL_SEMCONV_STABILITY_OPT_IN=http`) garante
+  `http.route`, necessário para o New Relic derivar métricas de transação APM.
+  Testes validam a configuração dos três instrumentors e os atributos da métrica HTTP.
+
 - Removidas as variáveis `AWS_EMF_*` de `.env.example`, que não eram mais
   lidas por nada desde a migração de `core/metrics.py` para logs JSON
   estruturados. Corrigidos os últimos comentários residuais que ainda citavam
