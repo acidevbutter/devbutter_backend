@@ -1,12 +1,12 @@
-import json
 import logging
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.settings.logging_config import JsonFormatter, setup_logging
+from app.settings.logging_config import setup_logging
 from app.settings.middleware import RequestContextMiddleware
+from app.settings.terminal_logging import ServiceContextFilter, TerminalFormatter
 
 
 def _build_app() -> FastAPI:
@@ -77,14 +77,14 @@ async def test_one_failure_event_per_unhandled_exception_no_duplicate(caplog) ->
     # The traceback/message must never leak into a *second* log via the
     # str() of the exception -- and the one event we do emit must not
     # editorialize the exception message as a plain log field either.
-    formatted = JsonFormatter().format(record)
-    payload = json.loads(formatted)
-    assert payload["message"] == "request failed"
+    ServiceContextFilter("devbutter-backend", "development").filter(record)
+    formatted = TerminalFormatter().format(record)
+    assert 'message="request failed"' in formatted
 
 
-def test_json_formatter_emits_one_parseable_object_with_expected_fields() -> None:
+def test_terminal_formatter_emits_readable_structured_fields() -> None:
     setup_logging("INFO")
-    formatter = JsonFormatter()
+    formatter = TerminalFormatter()
     record = logging.LogRecord(
         name="app.request",
         level=logging.INFO,
@@ -95,50 +95,49 @@ def test_json_formatter_emits_one_parseable_object_with_expected_fields() -> Non
         exc_info=None,
     )
     record.event = "http_request_completed"
-    record.service = "devbutter_backend"
-    record.environment = "development"
+    ServiceContextFilter("devbutter-backend", "development").filter(record)
     record.request_id = "11111111-1111-1111-1111-111111111111"
     record.method = "GET"
     record.route = "/health"
     record.status_code = 200
     record.duration_ms = 1.2
 
-    payload = json.loads(formatter.format(record))
+    line = formatter.format(record)
 
-    assert payload["level"] == "INFO"
-    assert payload["logger"] == "app.request"
-    assert payload["event"] == "http_request_completed"
-    assert payload["service"] == "devbutter_backend"
-    assert payload["environment"] == "development"
-    assert payload["request_id"] == "11111111-1111-1111-1111-111111111111"
-    assert payload["method"] == "GET"
-    assert payload["route"] == "/health"
-    assert payload["status_code"] == 200
-    assert payload["duration_ms"] == 1.2
-    assert "timestamp" in payload
+    assert "log.severity=INFO" in line
+    assert "logger=app.request" in line
+    assert "event.name=http_request_completed" in line
+    assert "service.name=devbutter-backend" in line
+    assert "deployment.environment=development" in line
+    assert "request.id=11111111-1111-1111-1111-111111111111" in line
+    assert "http.request.method=GET" in line
+    assert "url.path=/health" in line
+    assert "http.response.status_code=200" in line
+    assert "duration_ms=1.2" in line
+    assert line.startswith("timestamp=")
 
 
-def test_json_formatter_passes_metrics_payloads_through_unwrapped() -> None:
-    """app.core.metrics.emit_metrics logs an already-complete, flat JSON
-    payload to the "metrics" logger. This formatter must not re-wrap it
-    inside its own envelope, or every metric field ends up hidden as an
-    escaped string inside "message" and New Relic's top-level-key
-    auto-parsing can't see route/status/duration.
-    """
-    metric_payload = {"timestamp": 1234, "message": "metric_emitted", "Route": "/health"}
+def test_terminal_formatter_keeps_metric_fields_readable() -> None:
     record = logging.LogRecord(
         name="metrics",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
-        msg=json.dumps(metric_payload),
+        msg="metric emitted",
         args=(),
         exc_info=None,
     )
 
-    formatted = JsonFormatter().format(record)
+    record.event = "metric_emitted"
+    record.log_type = "metric"
+    record.Route = "/health"
+    ServiceContextFilter("devbutter-backend", "development").filter(record)
 
-    assert json.loads(formatted) == metric_payload
+    formatted = TerminalFormatter().format(record)
+
+    assert 'message="metric emitted"' in formatted
+    assert "log.type=metric" in formatted
+    assert "Route=/health" in formatted
 
 
 def test_uvicorn_access_logger_is_quiet_and_does_not_propagate() -> None:

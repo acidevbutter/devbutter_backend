@@ -18,6 +18,7 @@ from app.core.clients.butter_blob_client import close_butter_blob_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
 from app.core.metrics import configure_metrics, emit_metrics
+from app.core.telemetry import configure_telemetry
 from app.db.session import engine
 from app.invoices.router import account_router as account_invoices_router
 from app.invoices.router import router as invoices_router
@@ -53,6 +54,7 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+configure_telemetry(app)
 register_middleware(app)
 register_exception_handlers(app)
 
