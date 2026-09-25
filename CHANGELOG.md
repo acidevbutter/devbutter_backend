@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Probes de saúde não geram mais logs ou métricas de requisição. O terminal
+  passa a exibir uma linha curta por evento, enquanto o handler OTLP envia os
+  atributos estruturados diretamente ao New Relic quando há endpoint configurado.
+
 - Adicionada instrumentação OpenTelemetry de FastAPI, HTTPX e SQLAlchemy, com
   traces e métricas APM enviados por OTLP/HTTP diretamente ao New Relic quando
   `OTEL_ENABLED=true`. O stdout passa a usar logfmt legível e mantém os atributos

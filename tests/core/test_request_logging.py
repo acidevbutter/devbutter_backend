@@ -79,7 +79,7 @@ async def test_one_failure_event_per_unhandled_exception_no_duplicate(caplog) ->
     # editorialize the exception message as a plain log field either.
     ServiceContextFilter("devbutter-backend", "development").filter(record)
     formatted = TerminalFormatter().format(record)
-    assert 'message="request failed"' in formatted
+    assert "http_request_failed: request failed" in formatted
 
 
 def test_terminal_formatter_emits_readable_structured_fields() -> None:
@@ -104,17 +104,9 @@ def test_terminal_formatter_emits_readable_structured_fields() -> None:
 
     line = formatter.format(record)
 
-    assert "log.severity=INFO" in line
-    assert "logger=app.request" in line
-    assert "event.name=http_request_completed" in line
-    assert "service.name=devbutter-backend" in line
-    assert "deployment.environment=development" in line
-    assert "request.id=11111111-1111-1111-1111-111111111111" in line
-    assert "http.request.method=GET" in line
-    assert "url.path=/health" in line
-    assert "http.response.status_code=200" in line
-    assert "duration_ms=1.2" in line
-    assert line.startswith("timestamp=")
+    assert "[devbutter-backend/development]" in line
+    assert "http_request_completed: request completed" in line
+    assert "GET /health | → 200 | 1.2ms" in line
 
 
 def test_terminal_formatter_keeps_metric_fields_readable() -> None:
@@ -135,9 +127,8 @@ def test_terminal_formatter_keeps_metric_fields_readable() -> None:
 
     formatted = TerminalFormatter().format(record)
 
-    assert 'message="metric emitted"' in formatted
-    assert "log.type=metric" in formatted
-    assert "Route=/health" in formatted
+    assert "[devbutter-backend/development]" in formatted
+    assert "metric_emitted: metric emitted" in formatted
 
 
 def test_uvicorn_access_logger_is_quiet_and_does_not_propagate() -> None:

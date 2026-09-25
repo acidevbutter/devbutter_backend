@@ -14,6 +14,7 @@ from app.core.metrics import SERVICE_NAME, emit_metrics, route_template, status_
 from app.settings.config import settings
 
 logger = logging.getLogger("app.request")
+_PROBE_PATHS = frozenset({"/health", "/health/ready"})
 
 
 def _logged_route(request: Request) -> str:
@@ -119,24 +120,27 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
             status_code = response.status_code if response is not None else 500
-            metric_values = [
-                ("RequestCount", 1, "Count"),
-                ("Latency", duration_ms, "Milliseconds"),
-            ]
-            if status_code >= 500:
-                metric_values.append(("5xxCount", 1, "Count"))
-            elif status_code >= 400:
-                metric_values.append(("4xxCount", 1, "Count"))
-            await emit_metrics(
-                {
-                    "Method": request.method,
-                    "Route": route_template(request),
-                    "StatusClass": status_class(status_code),
-                },
-                metric_values,
-            )
+            if request.url.path not in _PROBE_PATHS:
+                metric_values = [
+                    ("RequestCount", 1, "Count"),
+                    ("Latency", duration_ms, "Milliseconds"),
+                ]
+                if status_code >= 500:
+                    metric_values.append(("5xxCount", 1, "Count"))
+                elif status_code >= 400:
+                    metric_values.append(("4xxCount", 1, "Count"))
+                await emit_metrics(
+                    {
+                        "Method": request.method,
+                        "Route": route_template(request),
+                        "StatusClass": status_class(status_code),
+                    },
+                    metric_values,
+                )
         assert response is not None
         response.headers["X-Request-ID"] = request_id
+        if request.url.path in _PROBE_PATHS:
+            return response
         logger.info(
             "request completed",
             extra={
