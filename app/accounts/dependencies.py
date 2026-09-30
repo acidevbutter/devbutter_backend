@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends
@@ -17,9 +18,10 @@ from app.core.clients.asaas_client import AsaasClient, get_asaas_client
 from app.core.clients.relay_client import RelayClient, get_relay_client
 from app.core.dependencies import DbSession
 from app.core.exceptions import ForbiddenError, UnauthorizedError
-from app.core.metrics import emit_metrics
 from app.core.security import InvalidTokenError, TokenType, decode_token
 from app.notifications.service import NotificationService
+
+logger = logging.getLogger(__name__)
 
 
 def get_account_service(db: DbSession) -> AccountService:
@@ -68,12 +70,14 @@ async def get_authenticated_context(
     service: AccountServiceDep,
 ) -> AuthenticatedContext:
     if credentials is None:
-        await emit_metrics({"Reason": "missing_bearer_token"}, [("AuthFailure", 1, "Count")])
+        logger.warning(
+            "auth failed", extra={"event": "auth_failed", "reason": "missing_bearer_token"}
+        )
         raise UnauthorizedError("Missing bearer token")
     try:
         claims = decode_token(credentials.credentials, TokenType.ACCESS)
     except InvalidTokenError as exc:
-        await emit_metrics({"Reason": "invalid_token"}, [("AuthFailure", 1, "Count")])
+        logger.warning("auth failed", extra={"event": "auth_failed", "reason": "invalid_token"})
         raise UnauthorizedError(str(exc)) from exc
     user = await service.get_user(claims.user_id)
     account = await service.get_account_for_user(claims.account_id, claims.user_id)
@@ -85,8 +89,9 @@ async def get_authenticated_context(
         or account is None
         or company is None
     ):
-        await emit_metrics(
-            {"Reason": "inactive_or_session_invalid"}, [("AuthFailure", 1, "Count")]
+        logger.warning(
+            "auth failed",
+            extra={"event": "auth_failed", "reason": "inactive_or_session_invalid"},
         )
         raise UnauthorizedError("User or selected account is no longer active")
     return AuthenticatedContext(user, company, account)

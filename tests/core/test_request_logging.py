@@ -109,28 +109,6 @@ def test_terminal_formatter_emits_readable_structured_fields() -> None:
     assert "GET /health | → 200 | 1.2ms" in line
 
 
-def test_terminal_formatter_keeps_metric_fields_readable() -> None:
-    record = logging.LogRecord(
-        name="metrics",
-        level=logging.INFO,
-        pathname=__file__,
-        lineno=1,
-        msg="metric emitted",
-        args=(),
-        exc_info=None,
-    )
-
-    record.event = "metric_emitted"
-    record.log_type = "metric"
-    record.Route = "/health"
-    ServiceContextFilter("devbutter-backend", "development").filter(record)
-
-    formatted = TerminalFormatter().format(record)
-
-    assert "[devbutter-backend/development]" in formatted
-    assert "metric_emitted: metric emitted" in formatted
-
-
 def test_uvicorn_access_logger_is_quiet_and_does_not_propagate() -> None:
     setup_logging("INFO")
     uvicorn_access = logging.getLogger("uvicorn.access")

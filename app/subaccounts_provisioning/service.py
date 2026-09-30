@@ -27,7 +27,6 @@ from app.accounts.repository import (
 )
 from app.core.clients.asaas_client import AsaasClient
 from app.core.exceptions import UpstreamServiceError, ValidationFailedError
-from app.core.metrics import emit_metrics
 from app.notifications.service import NotificationService
 from app.settings.config import settings
 
@@ -116,10 +115,6 @@ class SubaccountProvisioningService:
             link.provisioning_status = "CREATION_FAILED"
             link.last_error = str(exc)[:1000]
             await self._link_repository.update(link)
-            await emit_metrics(
-                {"Environment": settings.environment, "Actor": actor.split(":")[0]},
-                [("SubaccountProvisioningFailed", 1, "Count")],
-            )
             logger.warning("subaccount provisioning failed for company %s: %s", company_id, exc)
             return SubaccountProvisioningResult(link, created=False, detail="creation_failed")
 
@@ -131,10 +126,6 @@ class SubaccountProvisioningService:
         link.approval_status = "PENDING"
         await self._link_repository.update(link)
 
-        await emit_metrics(
-            {"Environment": settings.environment, "Actor": actor.split(":")[0]},
-            [("SubaccountProvisioned", 1, "Count")],
-        )
         if owner is not None:
             try:
                 self._notification_service.notify_subaccount_onboarding(owner, company.name)

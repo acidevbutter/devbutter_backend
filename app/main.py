@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -17,8 +18,6 @@ from app.core.clients.asaas_client import close_asaas_client
 from app.core.clients.butter_blob_client import close_butter_blob_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
 from app.core.exceptions import register_exception_handlers
-from app.core.metrics import configure_metrics, emit_metrics
-from app.core.telemetry import configure_telemetry
 from app.db.session import engine
 from app.invoices.router import account_router as account_invoices_router
 from app.invoices.router import router as invoices_router
@@ -34,7 +33,7 @@ from app.webhooks.router import admin_router as admin_webhooks_router
 from app.webhooks.router import router as webhooks_router
 
 setup_logging(settings.log_level)
-configure_metrics()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -54,7 +53,6 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
-configure_telemetry(app)
 register_middleware(app)
 register_exception_handlers(app)
 
@@ -85,7 +83,7 @@ async def readiness() -> dict[str, str] | JSONResponse:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
     except Exception:
-        await emit_metrics({}, [("HealthCheckFailure", 1, "Count")])
+        logger.warning("readiness check failed", extra={"event": "health_check_failed"})
         return JSONResponse(status_code=503, content={"status": "unavailable"})
     return {"status": "ready"}
 

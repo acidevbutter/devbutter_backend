@@ -12,8 +12,6 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     environment: Literal["development", "staging", "preprod", "production"] = "development"
-    otel_enabled: bool = False
-    otel_service_name: str = "devbutter_backend"
 
     database_host: str = "shared-postgres"
     database_port: int = 5432

@@ -1,7 +1,7 @@
 import logging.config
 
-from app.core.metrics import SERVICE_NAME
 from app.settings.config import settings
+from app.settings.constants import SERVICE_NAME
 from app.settings.terminal_logging import ServiceContextFilter, TerminalFormatter
 
 
