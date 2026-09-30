@@ -10,22 +10,21 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
-from app.core.metrics import SERVICE_NAME, emit_metrics, route_template, status_class
 from app.settings.config import settings
+from app.settings.constants import SERVICE_NAME
 
 logger = logging.getLogger("app.request")
+_PROBE_PATHS = frozenset({"/health", "/health/ready"})
 
 
 def _logged_route(request: Request) -> str:
     """Route template for the completion log, e.g. "/accounts/{account_id}".
 
-    Unlike `route_template` (used for metric dimensions, where an unmatched
-    request must collapse to the fixed low-cardinality "<unmatched>" bucket),
-    the log line falls back to the raw request path so a 404 is still
-    diagnosable from `route` alone.
+    Falls back to the raw request path when no route matched so a 404 is
+    still diagnosable from `route` alone.
     """
-    route = route_template(request)
-    return request.url.path if route == "<unmatched>" else route
+    path = getattr(request.scope.get("route"), "path", None)
+    return path if isinstance(path, str) else request.url.path
 
 
 class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
@@ -78,8 +77,8 @@ class ConversationRateLimitMiddleware(BaseHTTPMiddleware):
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Assigns a request id, times the request, and emits exactly one
-    structured JSON completion event per request (success or failure) --
-    see app.settings.logging_config.JsonFormatter for the wire format.
+    completion log line per request (success or failure); see
+    app.settings.terminal_logging.TerminalFormatter for the output format.
     """
 
     async def dispatch(
@@ -88,7 +87,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         start = time.perf_counter()
-        response = None
         base_log_fields = {
             "service": SERVICE_NAME,
             "environment": settings.environment,
@@ -116,27 +114,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 },
             )
             raise
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            status_code = response.status_code if response is not None else 500
-            metric_values = [
-                ("RequestCount", 1, "Count"),
-                ("Latency", duration_ms, "Milliseconds"),
-            ]
-            if status_code >= 500:
-                metric_values.append(("5xxCount", 1, "Count"))
-            elif status_code >= 400:
-                metric_values.append(("4xxCount", 1, "Count"))
-            await emit_metrics(
-                {
-                    "Method": request.method,
-                    "Route": route_template(request),
-                    "StatusClass": status_class(status_code),
-                },
-                metric_values,
-            )
-        assert response is not None
+        duration_ms = (time.perf_counter() - start) * 1000
         response.headers["X-Request-ID"] = request_id
+        if request.url.path in _PROBE_PATHS:
+            return response
         logger.info(
             "request completed",
             extra={
