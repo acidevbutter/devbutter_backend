@@ -20,6 +20,11 @@ class FakeAsaasClient:
         self.created_customers = []
         self.created_payments = []
 
+    async def update_customer(self, customer_id, payload):
+        self.updated_customers = getattr(self, "updated_customers", [])
+        self.updated_customers.append((customer_id, payload))
+        return {"id": customer_id}
+
     async def create_customer(self, payload):
         self.created_customers.append(payload)
         return {"id": "cus_000001"}
@@ -433,3 +438,48 @@ async def test_invoice_persists_and_exposes_billing_type(
     assert approved.status_code == 201, approved.text
     assert invoices.status_code == 200, invoices.text
     assert invoices.json()[0]["billing_type"] == "PIX"
+
+
+async def test_existing_asaas_customer_gets_the_document_before_billing(
+    client: AsyncClient, db_session: AsyncSession
+):
+    from app.accounts.models import AsaasCustomerLink, Company
+
+    client_tokens = await signup(client, email="sync@example.com", cpf="12345678900")
+    admin_tokens = await signup(client, email="admin6@example.com")
+    await _make_admin(db_session, "admin6@example.com")
+    fake_asaas = FakeAsaasClient()
+    app.dependency_overrides[get_asaas_client] = lambda: fake_asaas
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
+        account_id = me.json()["id"]
+        company = await db_session.scalar(
+            select(Company).join(User).where(User.email == "sync@example.com")
+        )
+        # A customer created earlier, before the document was known.
+        db_session.add(AsaasCustomerLink(company_id=company.id, asaas_customer_id="cus_old"))
+        await db_session.commit()
+        created = await client.post(
+            "/quotes/manual",
+            json={
+                "account_id": account_id,
+                "scope_summary": "Site",
+                "price_range": "R$1.000",
+                "timeline": "2 semanas",
+            },
+            headers=auth_headers(admin_tokens),
+        )
+        approved = await client.post(
+            f"/admin/quotes/{created.json()['id']}/approve",
+            json={"amount": "500.00", "due_date": (date.today() + timedelta(days=5)).isoformat()},
+            headers=auth_headers(admin_tokens),
+        )
+    finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert approved.status_code == 201, approved.text
+    assert fake_asaas.created_customers == []  # reused, not recreated
+    assert fake_asaas.updated_customers == [("cus_old", {"cpfCnpj": "12345678900"})]
+    assert fake_asaas.created_payments[0]["customer"] == "cus_old"
