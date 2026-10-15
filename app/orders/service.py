@@ -89,6 +89,12 @@ class OrderService:
         billing_type: str,
     ) -> Order:
         link = await self.account_repository.get_asaas_customer_link(company.id)
+        document = company.cnpj or user.cpf
+        if link is not None and document:
+            # The Asaas customer may have been created before the client filled
+            # their CPF/CNPJ (portal "Meus dados"); Asaas rejects the charge
+            # otherwise, so push the current document before billing (DVB-422).
+            await self.asaas_client.update_customer(link.asaas_customer_id, {"cpfCnpj": document})
         if link is None:
             customer = await self.asaas_client.create_customer(
                 {
