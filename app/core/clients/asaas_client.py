@@ -66,6 +66,9 @@ class AsaasClient:
     async def create_customer(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/customers", json_body=payload)
 
+    async def update_customer(self, customer_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("PUT", f"/customers/{customer_id}", json_body=payload)
+
     async def create_payment(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/payments", json_body=payload)
 
