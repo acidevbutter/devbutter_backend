@@ -5,6 +5,7 @@ from fastapi import APIRouter, status
 from app.accounts.dependencies import AccountServiceDep, OptionalCurrentAccount
 from app.conversations.dependencies import ConversationServiceDep
 from app.conversations.models import Conversation
+from app.conversations.redaction import redact_preview
 from app.conversations.schemas import (
     BusinessProfilePatch,
     ConversationMessageCreate,
@@ -38,6 +39,14 @@ async def _get_owned_conversation(
     return conversation
 
 
+def _client_read(conversation: Conversation) -> ConversationRead:
+    """ConversationRead for the visitor/client: the stored draft_preview keeps the
+    AI's prices for the admin screens, but they never leave through here (DVB-454)."""
+    read = ConversationRead.model_validate(conversation)
+    read.draft_preview = redact_preview(read.draft_preview)
+    return read
+
+
 @router.post(
     "",
     response_model=ConversationRead,
@@ -48,7 +57,7 @@ async def start_conversation(
     account: OptionalCurrentAccount, service: ConversationServiceDep
 ) -> ConversationRead:
     conversation = await service.start(account.id if account else None)
-    return ConversationRead.model_validate(conversation)
+    return _client_read(conversation)
 
 
 @router.get("/{conversation_id}", response_model=ConversationRead, summary="Get a conversation")
@@ -56,7 +65,7 @@ async def get_conversation(
     conversation_id: uuid.UUID, account: OptionalCurrentAccount, service: ConversationServiceDep
 ) -> ConversationRead:
     conversation = await _get_owned_conversation(conversation_id, account, service)
-    return ConversationRead.model_validate(conversation)
+    return _client_read(conversation)
 
 
 @router.post(
@@ -75,7 +84,9 @@ async def send_message(
     reply, ready_to_submit, preview = await service.send_message(
         conversation, payload.content, selection
     )
-    return ConversationTurn(reply=reply, ready_to_submit=ready_to_submit, preview=preview)
+    return ConversationTurn(
+        reply=reply, ready_to_submit=ready_to_submit, preview=redact_preview(preview)
+    )
 
 
 @router.post(
@@ -94,7 +105,9 @@ async def select_option(
     reply, ready_to_submit, preview = await service.select_option(
         conversation, payload.option_key
     )
-    return ConversationTurn(reply=reply, ready_to_submit=ready_to_submit, preview=preview)
+    return ConversationTurn(
+        reply=reply, ready_to_submit=ready_to_submit, preview=redact_preview(preview)
+    )
 
 
 @router.patch(
@@ -112,7 +125,9 @@ async def patch_business_profile(
     reply, ready_to_submit, preview = await service.patch_business_profile(
         conversation, payload.model_dump(exclude_unset=True)
     )
-    return ConversationTurn(reply=reply, ready_to_submit=ready_to_submit, preview=preview)
+    return ConversationTurn(
+        reply=reply, ready_to_submit=ready_to_submit, preview=redact_preview(preview)
+    )
 
 
 @router.post(
@@ -199,7 +214,6 @@ async def draft_quote(
         quote_id=quote.id,
         reference=quote.reference,
         scope_summary=quote.scope_summary,
-        price_range=quote.price_range,
         timeline=quote.timeline,
         tokens=tokens,
         pending_account_link=pending_account_link,
