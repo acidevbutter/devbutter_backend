@@ -125,10 +125,8 @@ async def test_visitor_new_email_gets_account_created_and_tokens_on_draft_quote(
         body = response.json()
         assert body["tokens"] is not None
         assert body["pending_account_link"] is False
-        # Shown once, right here -- see DraftQuoteFromConversation's
-        # docstring. GET /quotes/{id} still redacts price on a draft quote
-        # (see tests/test_quotes.py); this endpoint is a narrow exception.
-        assert body["price_range"] == "R$15.000 - R$25.000"
+        # DVB-454: the price never reaches the visitor before approval.
+        assert body["price_range"] is None
         assert body["timeline"] == "2 meses"
         assert body["reference"].startswith("COT-")
 
@@ -364,7 +362,7 @@ async def test_draft_quote_applies_structured_service_budget_timeline_overrides(
         )
         assert response.status_code == 201, response.text
         body = response.json()
-        assert body["price_range"] == "R$ 30–80 mil"
+        assert body["price_range"] is None
         assert body["timeline"] == "1–3 meses"
 
         me = await client.get("/accounts/me", headers=auth_headers(body["tokens"]))
@@ -711,3 +709,50 @@ async def test_conversation_rate_limit_returns_429(client: AsyncClient):
     finally:
         _settings.conversation_rate_limit_per_minute = 0
         app.dependency_overrides.pop(get_butter_mind_client, None)
+
+
+def _no_price_keys(value) -> bool:
+    text = str(value)
+    return "price_range" not in text and "budget_range" not in text
+
+
+async def test_client_facing_conversation_routes_never_expose_price(client: AsyncClient):
+    preview = _preview(stage="choosing", options=_T2_OPTIONS, next_step=None)
+    preview["budget_range"] = "R$ 8k–35k"
+    _mock_butter_mind(_extraction(), turn_preview=preview)
+    try:
+        start = await client.post("/conversations")
+        conversation_id = start.json()["id"]
+        message = await client.post(
+            f"/conversations/{conversation_id}/messages", json={"content": "oi"}
+        )
+        chosen = await client.post(
+            f"/conversations/{conversation_id}/select-option", json={"option_key": "opt_enxuto"}
+        )
+        patched = await client.patch(
+            f"/conversations/{conversation_id}/business-profile", json={"segment": "moda"}
+        )
+        resumed = await client.get(f"/conversations/{conversation_id}")
+    finally:
+        app.dependency_overrides.pop(get_butter_mind_client, None)
+
+    for response in (message, chosen, patched, resumed):
+        assert response.status_code in (200, 201), response.text
+        body = response.json()
+        assert _no_price_keys(body.get("preview") or body.get("draft_preview"))
+    # the options themselves are still there, just without prices
+    assert message.json()["preview"]["options"][0]["key"] == "opt_enxuto"
+
+
+def test_redact_preview_strips_prices_at_any_depth_without_mutating_input():
+    from app.conversations.redaction import redact_preview
+
+    original = {
+        "budget_range": "x",
+        "options": [{"key": "a", "price_range": "y", "nested": {"price_range": "z", "ok": 1}}],
+        "stage": "choosing",
+    }
+    redacted = redact_preview(original)
+    assert redacted == {"options": [{"key": "a", "nested": {"ok": 1}}], "stage": "choosing"}
+    assert "price_range" in original["options"][0]
+    assert redact_preview(None) is None
