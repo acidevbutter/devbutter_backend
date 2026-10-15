@@ -17,5 +17,6 @@ class InvoiceRead(BaseModel):
     status: str
     due_date: date
     payment_link: str | None
+    billing_type: str | None = None
     last_event_at: datetime | None
     created_at: datetime
