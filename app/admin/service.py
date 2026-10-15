@@ -96,6 +96,9 @@ class AdminService:
     async def get_conversation(self, conversation_id: uuid.UUID) -> dict[str, Any] | None:
         return await self.repository.get_conversation(conversation_id)
 
+    async def get_quote(self, quote_id: uuid.UUID) -> Quote:
+        return await self.quote_service.get(quote_id)
+
     async def edit_quote(self, quote_id: uuid.UUID, payload: QuoteEdit) -> Quote:
         return await self.quote_service.edit(quote_id, payload)
 
