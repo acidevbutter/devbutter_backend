@@ -12,6 +12,11 @@ from tests.conftest import auth_headers, signup
 
 
 class _FakeAsaasClient:
+    async def update_customer(self, customer_id, payload):
+        self.updated_customers = getattr(self, "updated_customers", [])
+        self.updated_customers.append((customer_id, payload))
+        return {"id": customer_id}
+
     async def create_customer(self, payload):
         return {"id": "cus_price_test"}
 
