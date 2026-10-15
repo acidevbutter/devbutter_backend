@@ -70,7 +70,9 @@ async def test_client_facing_get_quote_hides_price_range_while_draft(
 async def test_client_facing_get_quote_shows_approved_invoice_amount_not_ai_price_range(
     client: AsyncClient, db_session: AsyncSession
 ):
-    client_tokens = await signup(client, email="approved-price-client@example.com")
+    client_tokens = await signup(
+        client, email="approved-price-client@example.com", cpf="12345678900"
+    )
     admin_tokens = await signup(client, email="approved-price-admin@example.com")
     await _make_admin(db_session, "approved-price-admin@example.com")
 

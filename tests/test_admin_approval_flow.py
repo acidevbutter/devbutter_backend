@@ -102,7 +102,7 @@ async def test_approve_quote_creates_order_customer_link_and_invoice(
 async def test_approving_already_approved_quote_returns_409(
     client: AsyncClient, db_session: AsyncSession
 ):
-    client_tokens = await signup(client, email="client2@example.com")
+    client_tokens = await signup(client, email="client2@example.com", cpf="12345678900")
     admin_tokens = await signup(client, email="marcos2@example.com")
     await _make_admin(db_session, "marcos2@example.com")
 
@@ -155,7 +155,7 @@ async def test_asaas_webhook_updates_invoice_status_idempotently(
 ):
     monkeypatch.setattr(settings, "asaas_webhook_access_token", "test-webhook-token")
 
-    client_tokens = await signup(client, email="webhook-client@example.com")
+    client_tokens = await signup(client, email="webhook-client@example.com", cpf="12345678900")
     admin_tokens = await signup(client, email="marcos3@example.com")
     await _make_admin(db_session, "marcos3@example.com")
 
@@ -245,3 +245,116 @@ async def test_asaas_webhook_rejects_wrong_token(client: AsyncClient, monkeypatc
         headers={"asaas-access-token": "wrong-token"},
     )
     assert response.status_code == 401
+
+
+class _FailingPaymentAsaasClient(FakeAsaasClient):
+    async def create_payment(self, payload):
+        from app.core.exceptions import UpstreamServiceError
+
+        raise UpstreamServiceError("asaas_payment returned 400 for POST /payments")
+
+
+async def _quote_for(client: AsyncClient, admin_tokens, client_tokens) -> str:
+    me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
+    created = await client.post(
+        "/quotes/manual",
+        json={
+            "account_id": me.json()["id"],
+            "scope_summary": "Site institucional",
+            "price_range": "R$5.000",
+            "timeline": "4 semanas",
+        },
+        headers=auth_headers(admin_tokens),
+    )
+    assert created.status_code == 201
+    return created.json()["id"]
+
+
+def _body() -> dict:
+    return {"amount": "6000.00", "due_date": (date.today() + timedelta(days=7)).isoformat()}
+
+
+async def test_approve_without_cpf_cnpj_returns_422_and_touches_nothing(
+    client: AsyncClient, db_session: AsyncSession
+):
+    client_tokens = await signup(client, email="nodoc@example.com")  # no cpf
+    admin_tokens = await signup(client, email="admin1@example.com")
+    await _make_admin(db_session, "admin1@example.com")
+    fake_asaas = FakeAsaasClient()
+    app.dependency_overrides[get_asaas_client] = lambda: fake_asaas
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        quote_id = await _quote_for(client, admin_tokens, client_tokens)
+        response = await client.post(
+            f"/admin/quotes/{quote_id}/approve", json=_body(), headers=auth_headers(admin_tokens)
+        )
+        quote = await client.get(f"/quotes/{quote_id}", headers=auth_headers(admin_tokens))
+    finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert response.status_code == 422, response.text
+    assert "CPF/CNPJ" in response.json()["detail"]
+    assert fake_asaas.created_customers == []
+    assert quote.json()["status"] == "draft"
+
+
+async def test_asaas_failure_reverts_quote_and_allows_retry(
+    client: AsyncClient, db_session: AsyncSession
+):
+    client_tokens = await signup(client, email="doc@example.com", cpf="12345678900")
+    admin_tokens = await signup(client, email="admin2@example.com")
+    await _make_admin(db_session, "admin2@example.com")
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        quote_id = await _quote_for(client, admin_tokens, client_tokens)
+        app.dependency_overrides[get_asaas_client] = lambda: _FailingPaymentAsaasClient()
+        failed = await client.post(
+            f"/admin/quotes/{quote_id}/approve", json=_body(), headers=auth_headers(admin_tokens)
+        )
+        after_failure = await client.get(f"/quotes/{quote_id}", headers=auth_headers(admin_tokens))
+
+        app.dependency_overrides[get_asaas_client] = lambda: FakeAsaasClient()
+        retry = await client.post(
+            f"/admin/quotes/{quote_id}/approve", json=_body(), headers=auth_headers(admin_tokens)
+        )
+    finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert failed.status_code == 502
+    assert after_failure.json()["status"] == "draft"
+    assert retry.status_code == 201, retry.text
+
+
+async def test_admin_fills_document_then_approves(client: AsyncClient, db_session: AsyncSession):
+    client_tokens = await signup(client, email="fill@example.com")  # no cpf
+    admin_tokens = await signup(client, email="admin3@example.com")
+    await _make_admin(db_session, "admin3@example.com")
+    app.dependency_overrides[get_asaas_client] = lambda: FakeAsaasClient()
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        quote_id = await _quote_for(client, admin_tokens, client_tokens)
+        account_id = (await client.get("/accounts/me", headers=auth_headers(client_tokens))).json()[
+            "id"
+        ]
+        bad = await client.patch(
+            f"/admin/clients/{account_id}/document",
+            json={"cpf": "123"},
+            headers=auth_headers(admin_tokens),
+        )
+        ok = await client.patch(
+            f"/admin/clients/{account_id}/document",
+            json={"cpf": "123.456.789-00"},
+            headers=auth_headers(admin_tokens),
+        )
+        approved = await client.post(
+            f"/admin/quotes/{quote_id}/approve", json=_body(), headers=auth_headers(admin_tokens)
+        )
+    finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert bad.status_code == 422
+    assert ok.status_code == 200 and ok.json()["cpf"] == "12345678900"
+    assert approved.status_code == 201, approved.text
