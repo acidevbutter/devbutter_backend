@@ -82,7 +82,8 @@ starts the sibling services, and applies the local migrations.
 ```bash
 poetry install
 cp .env.example .env
-# Fill in JWT_SECRET, ASAAS_WEBHOOK_ACCESS_TOKEN, RELAY_PROJECT_ID.
+# Fill in JWT_SECRET, ASAAS_WEBHOOK_ACCESS_TOKEN, RELAY_PROJECT_ID
+# (RELAY_PROJECT_ID must be a real Project.id from the relay DB -- see .env.example).
 # mTLS client cert for asaas_payment:
 #   ../asaas_payment/scripts/generate_dev_certs.sh devbutter-platform
 #   cp ../asaas_payment/certs/{devbutter-platform.crt,devbutter-platform.key,ca.crt} ./certs/
