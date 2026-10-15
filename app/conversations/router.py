@@ -1,4 +1,7 @@
+import logging
 import uuid
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import APIRouter, status
 
@@ -45,6 +48,18 @@ def _client_read(conversation: Conversation) -> ConversationRead:
     read = ConversationRead.model_validate(conversation)
     read.draft_preview = redact_preview(read.draft_preview)
     return read
+
+
+logger = logging.getLogger(__name__)
+
+
+def _best_effort(notify: Callable[..., None], *args: Any) -> None:
+    """The quote is already saved when these e-mails go out; a delivery problem
+    (relay/Redis down, bad RELAY_PROJECT_ID) must not turn the request into a 502 (DVB-330)."""
+    try:
+        notify(*args)
+    except Exception:
+        logger.exception("conversation notification could not be queued")
 
 
 @router.post(
@@ -193,7 +208,9 @@ async def draft_quote(
                 new_account_user = link.user
         else:
             pending_account_link = True
-            notification_service.notify_pending_account_link(link.user, extraction)
+            _best_effort(
+                notification_service.notify_pending_account_link, link.user, extraction
+            )
 
     quote = await quote_service.create_from_conversation(
         account_id=account_id, conversation_id=conversation.id, extraction=extraction
@@ -208,7 +225,12 @@ async def draft_quote(
             if payload.password
             else await account_service.issue_password_setup_token(new_account_user.id)
         )
-        notification_service.notify_quote_received(new_account_user, quote, password_setup_token)
+        _best_effort(
+            notification_service.notify_quote_received,
+            new_account_user,
+            quote,
+            password_setup_token,
+        )
 
     return DraftQuoteFromConversation(
         quote_id=quote.id,

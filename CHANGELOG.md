@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Relay (DVB-332): valida `RELAY_PROJECT_ID` como UUID antes de publicar na fila e
+  registra erro de configuração no startup; acrescenta referência do orçamento e
+  link do portal aos payloads que usam os templates transacionais correspondentes.
+  Falha ao enfileirar aviso depois de salvar uma cotação é registrada sem transformar
+  o resultado já persistido em 502.
+
 - Removida toda a telemetria OpenTelemetry/métricas (`app/core/metrics.py`,
   `app/core/telemetry.py`, instrumentors de FastAPI/HTTPX/SQLAlchemy, dependências
   `opentelemetry-*`, settings e variáveis `OTEL_*`) e as linhas JSON

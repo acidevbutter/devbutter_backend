@@ -17,6 +17,7 @@ from app.conversations.socket_server import sio
 from app.core.clients.asaas_client import close_asaas_client
 from app.core.clients.butter_blob_client import close_butter_blob_client
 from app.core.clients.butter_mind_client import close_butter_mind_client
+from app.core.clients.relay_client import is_valid_project_id
 from app.core.exceptions import register_exception_handlers
 from app.db.session import engine
 from app.invoices.router import account_router as account_invoices_router
@@ -38,6 +39,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if not is_valid_project_id(settings.relay_project_id):
+        logger.error(
+            "RELAY_PROJECT_ID is empty or not a UUID: transactional e-mail "
+            "(quote confirmation, password setup link) will fail until it is set",
+            extra={"event": "relay_project_id_invalid"},
+        )
     yield
     await close_asaas_client()
     await close_butter_mind_client()
