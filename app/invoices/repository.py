@@ -66,6 +66,7 @@ class InvoiceRepository:
         due_date: date,
         status: str,
         payment_link: str | None,
+        billing_type: str | None = None,
     ) -> Invoice:
         invoice = Invoice(
             order_id=order_id,
@@ -74,6 +75,7 @@ class InvoiceRepository:
             due_date=due_date,
             status=status,
             payment_link=payment_link,
+            billing_type=billing_type,
         )
         self.session.add(invoice)
         try:

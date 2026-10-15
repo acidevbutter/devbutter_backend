@@ -120,6 +120,7 @@ class OrderService:
             due_date=due_date,
             status=payment.get("status", "PENDING"),
             payment_link=payment.get("invoiceUrl"),
+            billing_type=payment.get("billingType") or billing_type,
         )
 
         order = await self.repository.set_status(order, "invoiced")

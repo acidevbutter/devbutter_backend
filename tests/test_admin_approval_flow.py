@@ -392,3 +392,44 @@ async def test_admin_fills_document_then_approves(client: AsyncClient, db_sessio
     assert bad.status_code == 422
     assert ok.status_code == 200 and ok.json()["cpf"] == "12345678900"
     assert approved.status_code == 201, approved.text
+
+
+async def test_invoice_persists_and_exposes_billing_type(
+    client: AsyncClient, db_session: AsyncSession
+):
+    client_tokens = await signup(client, email="pix@example.com", cpf="12345678900")
+    admin_tokens = await signup(client, email="admin5@example.com")
+    await _make_admin(db_session, "admin5@example.com")
+    app.dependency_overrides[get_asaas_client] = lambda: FakeAsaasClient()
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
+        created = await client.post(
+            "/quotes/manual",
+            json={
+                "account_id": me.json()["id"],
+                "scope_summary": "Site",
+                "price_range": "R$1.000",
+                "timeline": "2 semanas",
+            },
+            headers=auth_headers(admin_tokens),
+        )
+        approved = await client.post(
+            f"/admin/quotes/{created.json()['id']}/approve",
+            json={
+                "amount": "2000.00",
+                "due_date": (date.today() + timedelta(days=7)).isoformat(),
+                "billing_type": "PIX",
+            },
+            headers=auth_headers(admin_tokens),
+        )
+        invoices = await client.get(
+            f"/invoices?order_id={approved.json()['id']}", headers=auth_headers(client_tokens)
+        )
+    finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert approved.status_code == 201, approved.text
+    assert invoices.status_code == 200, invoices.text
+    assert invoices.json()[0]["billing_type"] == "PIX"
