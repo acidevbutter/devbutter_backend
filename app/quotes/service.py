@@ -64,6 +64,11 @@ class QuoteService:
         self._require_pending(quote)
         return await self.repository.set_status(quote, "approved", reviewer_id)
 
+    async def revert_approval(self, quote: Quote, previous_status: str) -> Quote:
+        """Undo `approve` when the billing chain that follows it fails, so a
+        quote never stays `approved` without an Order/Invoice behind it."""
+        return await self.repository.set_status(quote, previous_status)
+
     async def reject(self, quote_id: uuid.UUID, reviewer_id: uuid.UUID) -> Quote:
         quote = await self.get(quote_id)
         self._require_pending(quote)

@@ -19,6 +19,10 @@ class OrderRepository:
         result = await self.session.execute(select(Order).where(Order.quote_id == quote_id))
         return result.scalar_one_or_none()
 
+    async def delete(self, order: Order) -> None:
+        await self.session.delete(order)
+        await self.session.commit()
+
     async def list_by_account(self, account_id: uuid.UUID) -> list[Order]:
         result = await self.session.execute(
             select(Order).where(Order.account_id == account_id).order_by(Order.created_at.desc())

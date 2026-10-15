@@ -69,6 +69,26 @@ class AdminRepository:
             )
         return rows, total
 
+    async def update_client_document(
+        self, account_id: uuid.UUID, *, cpf: str | None, cnpj: str | None
+    ) -> bool:
+        result = await self.session.execute(
+            select(Company, User)
+            .join(Account, Account.company_id == Company.id)
+            .join(User, User.id == Company.user_id)
+            .where(Account.id == account_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return False
+        company, user = row
+        if cpf is not None:
+            user.cpf = cpf
+        if cnpj is not None:
+            company.cnpj = cnpj
+        await self.session.commit()
+        return True
+
     async def get_client(self, account_id: uuid.UUID) -> dict[str, Any] | None:
         result = await self.session.execute(
             select(

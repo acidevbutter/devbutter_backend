@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.quotes.schemas import QuoteRead
 
@@ -52,6 +52,33 @@ class AdminClientDetailRead(BaseModel):
     subaccount_onboarding: str | None = None
     subaccount_approval: str | None = None
     counts: AdminClientCounts
+
+
+class AdminClientDocumentUpdate(BaseModel):
+    """Lets the admin fill the client's CPF and/or CNPJ (the AI chat never
+    collects them) so the quote can be approved -- Asaas requires one."""
+
+    cpf: str | None = None
+    cnpj: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "AdminClientDocumentUpdate":
+        self.cpf = _digits(self.cpf)
+        self.cnpj = _digits(self.cnpj)
+        if self.cpf is None and self.cnpj is None:
+            raise ValueError("Informe cpf ou cnpj")
+        if self.cpf is not None and len(self.cpf) != 11:
+            raise ValueError("CPF deve ter 11 dígitos")
+        if self.cnpj is not None and len(self.cnpj) != 14:
+            raise ValueError("CNPJ deve ter 14 dígitos")
+        return self
+
+
+def _digits(value: str | None) -> str | None:
+    if value is None:
+        return None
+    digits = "".join(ch for ch in value if ch.isdigit())
+    return digits or None
 
 
 class AdminOrderListItem(BaseModel):
