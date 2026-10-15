@@ -6,6 +6,7 @@ from typing import Any
 
 from app.accounts.repository import AccountRepository
 from app.conversations.models import Conversation
+from app.conversations.redaction import redact_preview
 from app.conversations.repository import ConversationRepository
 from app.conversations.service import ConversationService
 from app.conversations.socket_server import sio
@@ -194,7 +195,7 @@ async def send_message(sid: str, data: dict[str, Any]) -> None:
                         "message_id": event["message_id"],
                     }
                     if event.get("preview") is not None:
-                        payload["preview"] = event["preview"]
+                        payload["preview"] = redact_preview(event["preview"])
                     await sio.emit("assistant_done", payload, room=room)
         except Exception as exc:
             logger.exception("streaming reply failed for conversation %s", conversation_id)
