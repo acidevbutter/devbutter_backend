@@ -372,6 +372,17 @@ async def get_admin_conversation(
     )
 
 
+@router.get(
+    "/quotes/{quote_id}",
+    response_model=QuoteRead,
+    summary="Quote detail for review, with the AI price_range (never redacted)",
+)
+async def get_admin_quote(
+    quote_id: uuid.UUID, _admin: CurrentAdminAccount, service: AdminReadServiceDep
+) -> QuoteRead:
+    return QuoteRead.model_validate(await service.get_quote(quote_id))
+
+
 @router.patch(
     "/quotes/{quote_id}", response_model=QuoteRead, summary="Edit a draft quote's scope/price"
 )
