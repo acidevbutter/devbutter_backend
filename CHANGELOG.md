@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Removida toda a telemetria OpenTelemetry/métricas (`app/core/metrics.py`,
+  `app/core/telemetry.py`, instrumentors de FastAPI/HTTPX/SQLAlchemy, dependências
+  `opentelemetry-*`, settings e variáveis `OTEL_*`) e as linhas JSON
+  `metric emitted`: o export de métricas falhava em produção com
+  `Failed to export metrics batch code: 401` (chave New Relic inválida). O stdout
+  mantém apenas logs legíveis (`TerminalFormatter`) e probes de saúde continuam
+  silenciosos. Falhas que só eram sinalizadas por métrica (auth, webhook,
+  readiness) agora geram `logger.warning` curto, sem tokens ou payloads.
+  `SERVICE_NAME` passou para `app/settings/constants.py`. Refs acidevbutter/butter_blob#31.
+
 - Removidas as variáveis `AWS_EMF_*` de `.env.example`, que não eram mais
   lidas por nada desde a migração de `core/metrics.py` para logs JSON
   estruturados. Corrigidos os últimos comentários residuais que ainda citavam

@@ -24,7 +24,7 @@ class _FakeAsaasClient:
 
 
 class _FakeRelayClient:
-    def send(self, template_key, to, payload):
+    def send(self, template_key, to, payload, project_id=None, queue=None):
         pass
 
 

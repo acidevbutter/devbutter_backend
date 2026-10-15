@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any, cast
 
 import httpx
 
 from app.core.decorators import log_call
 from app.core.exceptions import UpstreamServiceError
-from app.core.metrics import emit_metrics, status_class
 from app.settings.config import settings
 
 
@@ -109,40 +107,22 @@ class ButterBlobClient:
         return f"{settings.butter_blob_base_url.rstrip('/')}/v1/public/{namespace}/{public_slug}"
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        started_at = time.perf_counter()
         try:
             response = await self._client.request(method, path, headers=self._headers(), **kwargs)
         except httpx.HTTPError as exc:
-            await self._record_metrics(method, started_at, "error")
             raise UpstreamServiceError(f"butter_blob request failed: {exc}") from exc
         if response.status_code >= 400:
-            await self._record_metrics(method, started_at, status_class(response.status_code))
             raise UpstreamServiceError(
                 f"butter_blob returned {response.status_code} for {method} {path}: {response.text}",
                 status_code=response.status_code,
             )
-        try:
-            return response.json() if response.content else None
-        finally:
-            await self._record_metrics(method, started_at, status_class(response.status_code))
+        return response.json() if response.content else None
 
     @staticmethod
     def _as_dict(value: Any) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise UpstreamServiceError("butter_blob returned an invalid response payload")
         return cast(dict[str, Any], value)
-
-    async def _record_metrics(self, operation: str, started_at: float, result: str) -> None:
-        values = [
-            ("UpstreamCallCount", 1, "Count"),
-            ("UpstreamLatency", (time.perf_counter() - started_at) * 1000, "Milliseconds"),
-        ]
-        if result == "error" or result in {"4xx", "5xx"}:
-            values.append(("UpstreamErrorCount", 1, "Count"))
-        await emit_metrics(
-            {"UpstreamService": "butter_blob", "Operation": operation, "StatusClass": result},
-            values,
-        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

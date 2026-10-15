@@ -65,7 +65,9 @@ class _FakeRelayClient:
     def __init__(self):
         self.sent: list[tuple[str, str, dict]] = []
 
-    def send(self, template_key: str, to: str, payload: dict) -> None:
+    def send(
+        self, template_key: str, to: str, payload: dict, project_id=None, queue=None
+    ) -> None:
         self.sent.append((template_key, to, payload))
 
 

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from celery import Celery
 
 from app.core.decorators import log_call
 from app.core.exceptions import UpstreamServiceError
-from app.core.metrics import emit_metrics_background
 from app.settings.config import settings
 
 TASK_NAME = "butter_relay.process_message"
@@ -31,41 +29,28 @@ class RelayClient:
         self._celery = Celery("devbutter_backend_relay_client", broker=settings.redis_url)
 
     @log_call
-    def send(self, template_key: str, to: str, payload: dict[str, Any]) -> None:
-        started_at = time.perf_counter()
+    def send(
+        self,
+        template_key: str,
+        to: str,
+        payload: dict[str, Any],
+        *,
+        project_id: str | None = None,
+        queue: str | None = None,
+    ) -> None:
+        """`project_id`/`queue` override the platform defaults per call, so
+        each Company's mail leaves through its own Relay project."""
         if not settings.redis_url:
-            self._record_metrics(started_at, "error")
             raise UpstreamServiceError("REDIS_URL is not configured")
-        try:
-            self._celery.send_task(
-                TASK_NAME,
-                kwargs={
-                    "project_id": settings.relay_project_id,
-                    "template_key": template_key,
-                    "to": to,
-                    "payload": payload,
-                },
-                queue=settings.relay_queue_name,
-            )
-        except Exception:
-            self._record_metrics(started_at, "error")
-            raise
-        self._record_metrics(started_at, "2xx")
-
-    def _record_metrics(self, started_at: float, result: str) -> None:
-        values = [
-            ("UpstreamCallCount", 1, "Count"),
-            ("UpstreamLatency", (time.perf_counter() - started_at) * 1000, "Milliseconds"),
-        ]
-        if result == "error":
-            values.append(("UpstreamErrorCount", 1, "Count"))
-        emit_metrics_background(
-            {
-                "UpstreamService": "butter_relay",
-                "Operation": "send_message",
-                "StatusClass": result,
+        self._celery.send_task(
+            TASK_NAME,
+            kwargs={
+                "project_id": project_id or settings.relay_project_id,
+                "template_key": template_key,
+                "to": to,
+                "payload": payload,
             },
-            values,
+            queue=queue or settings.relay_queue_name,
         )
 
 

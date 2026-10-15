@@ -84,7 +84,7 @@ class OrderService:
         )
 
         order = await self.repository.set_status(order, "invoiced")
-        self.notification_service.notify_quote_approved(user, quote, invoice)
+        self.notification_service.notify_quote_approved(user, quote, invoice, company)
         return order
 
     async def get(self, order_id: uuid.UUID) -> Order:

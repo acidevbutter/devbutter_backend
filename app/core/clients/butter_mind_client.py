@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
@@ -9,7 +8,6 @@ import httpx
 
 from app.core.decorators import log_call
 from app.core.exceptions import UpstreamServiceError
-from app.core.metrics import emit_metrics, status_class
 from app.settings.config import settings
 
 
@@ -162,37 +160,18 @@ class ButterMindClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        started_at = time.perf_counter()
         try:
             response = await self._client.request(
                 method, path, json=json_body, params=params, headers=headers
             )
         except httpx.HTTPError as exc:
-            await self._record_metrics(method, started_at, "error")
             raise UpstreamServiceError(f"butter_mind request failed: {exc}") from exc
         if response.status_code >= 400:
-            await self._record_metrics(method, started_at, status_class(response.status_code))
             raise UpstreamServiceError(
                 f"butter_mind returned {response.status_code} for {method} {path}: {response.text}",
                 status_code=response.status_code,
             )
-        try:
-            return cast(dict[str, Any], response.json())
-        finally:
-            await self._record_metrics(method, started_at, status_class(response.status_code))
-
-    async def _record_metrics(self, operation: str, started_at: float, result: str) -> None:
-        values = [
-            ("UpstreamCallCount", 1, "Count"),
-            ("UpstreamLatency", (time.perf_counter() - started_at) * 1000, "Milliseconds"),
-        ]
-        if result == "error" or result in {"4xx", "5xx"}:
-            values.append(("UpstreamErrorCount", 1, "Count"))
-        await emit_metrics(
-            {"UpstreamService": "butter_mind", "Operation": operation, "StatusClass": result},
-            values,
-        )
-
+        return cast(dict[str, Any], response.json())
     async def _internal_request(
         self,
         method: str,

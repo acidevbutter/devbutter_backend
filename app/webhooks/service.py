@@ -8,7 +8,6 @@ from typing import Any, cast
 from app.accounts.repository import AccountRepository, AsaasSubaccountLinkRepository
 from app.core.decorators import log_errors
 from app.core.exceptions import ConflictError, NotFoundError
-from app.core.metrics import emit_metrics
 from app.invoices.repository import InvoiceRepository
 from app.nfse.service import NfseService
 from app.notifications.service import NotificationService
@@ -101,7 +100,6 @@ class WebhookService:
     async def process_event(
         self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]
     ) -> WebhookEvent:
-        await emit_metrics({"EventType": event.event}, [("WebhookReceived", 1, "Count")])
         emitter_id = raw_payload.get("id")
         event_id = emitter_id if isinstance(emitter_id, str) and emitter_id else None
         if event_id is not None:
@@ -133,12 +131,14 @@ class WebhookService:
         try:
             await self._dispatch(event, raw_payload)
         except Exception as exc:
-            await emit_metrics({"EventType": event.event}, [("WebhookFailed", 1, "Count")])
+            logger.warning(
+                "webhook processing failed",
+                extra={"event": "webhook_failed", "webhook_event": event.event},
+            )
             detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
             await self.event_repository.mark_failed(audit_event, detail)
             raise
         processed = await self.event_repository.mark_processed(audit_event)
-        await emit_metrics({"EventType": event.event}, [("WebhookProcessed", 1, "Count")])
         return processed
 
     async def reprocess_event(self, audit_event: WebhookEvent) -> WebhookEvent:
@@ -146,12 +146,14 @@ class WebhookService:
         try:
             await self._dispatch(event, audit_event.payload)
         except Exception as exc:
-            await emit_metrics({"EventType": event.event}, [("WebhookFailed", 1, "Count")])
+            logger.warning(
+                "webhook processing failed",
+                extra={"event": "webhook_failed", "webhook_event": event.event},
+            )
             detail = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
             await self.event_repository.mark_failed(audit_event, detail)
             raise
         processed = await self.event_repository.mark_processed(audit_event)
-        await emit_metrics({"EventType": event.event}, [("WebhookProcessed", 1, "Count")])
         return processed
 
     async def _dispatch(self, event: AsaasWebhookEvent, raw_payload: dict[str, Any]) -> None:
@@ -213,7 +215,6 @@ class WebhookService:
             await self._notify_commercial_info_expiring(link)
 
         await self.subaccount_link_repository.update(link)
-        await emit_metrics({"EventType": event.event}, [("SubaccountStatusUpdated", 1, "Count")])
 
     @staticmethod
     def _read_expiration(event: AsaasWebhookEvent) -> datetime | None:
@@ -240,7 +241,7 @@ class WebhookService:
                 else None
             )
             self.notification_service.notify_commercial_info_expiring(
-                user, company.name, scheduled
+                user, company.name, scheduled, company
             )
         except Exception:  # pragma: no cover - best effort
             logger.exception("commercial-info-expiring notification could not be queued")
@@ -281,7 +282,7 @@ class WebhookService:
         user = await self.account_repository.get_user(company.user_id)
         if user is None:
             return
-        self.notification_service.notify_payment_status_changed(user, invoice)
+        self.notification_service.notify_payment_status_changed(user, invoice, company)
         nfse = self._nfse()
         if nfse is not None:
             await nfse.enqueue_from_paid_invoice(invoice)

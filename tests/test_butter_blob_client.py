@@ -3,7 +3,6 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.core.clients import butter_blob_client as blob_module
 from app.core.clients.butter_blob_client import ButterBlobClient
 from app.core.exceptions import UpstreamServiceError
 from app.settings.config import settings
@@ -36,17 +35,6 @@ def _blob_settings(monkeypatch):
     monkeypatch.setattr(settings, "butter_blob_base_url", "http://blob-api:8000")
 
 
-@pytest.fixture
-def emitted(monkeypatch) -> list[dict]:
-    calls: list[dict] = []
-
-    async def _fake_emit(dimensions, metric_values):
-        calls.append({"dimensions": dict(dimensions), "values": list(metric_values)})
-
-    monkeypatch.setattr(blob_module, "emit_metrics", _fake_emit)
-    return calls
-
-
 def _client_with(
     monkeypatch, responses: list[httpx.Response]
 ) -> tuple[ButterBlobClient, _Recorder]:
@@ -56,7 +44,7 @@ def _client_with(
     return client, recorder
 
 
-async def test_presign_upload_returns_body_and_sends_both_headers(monkeypatch, emitted):
+async def test_presign_upload_returns_body_and_sends_both_headers(monkeypatch):
     body = {"blob_id": "b1", "upload_url": "http://blob-api:8000/put", "method": "PUT"}
     client, recorder = _client_with(monkeypatch, [_response(201, body)])
 
@@ -74,24 +62,19 @@ async def test_presign_upload_returns_body_and_sends_both_headers(monkeypatch, e
         "visibility": "public",
         "byte_size": 10,
     }
-    assert emitted[0]["dimensions"]["UpstreamService"] == "butter_blob"
-    assert emitted[0]["dimensions"]["Operation"] == "POST"
-    assert emitted[0]["dimensions"]["StatusClass"] == "2xx"
 
 
 @pytest.mark.parametrize("status_code", [404, 413, 507])
-async def test_non_2xx_raises_upstream_error_with_status(monkeypatch, emitted, status_code):
+async def test_non_2xx_raises_upstream_error_with_status(monkeypatch, status_code):
     client, _ = _client_with(monkeypatch, [_response(status_code, {"detail": "nope"})])
 
     with pytest.raises(UpstreamServiceError) as excinfo:
         await client.presign_upload("a.png", "image/png")
 
     assert excinfo.value.status_code == status_code
-    assert emitted[0]["dimensions"]["StatusClass"] == f"{status_code // 100}xx"
-    assert any(name == "UpstreamErrorCount" for name, _, _ in emitted[0]["values"])
 
 
-async def test_download_url_returns_url_field(monkeypatch, emitted):
+async def test_download_url_returns_url_field(monkeypatch):
     client, recorder = _client_with(
         monkeypatch, [_response(200, {"url": "http://signed", "expires_at": "later"})]
     )
@@ -104,7 +87,7 @@ async def test_download_url_returns_url_field(monkeypatch, emitted):
     assert call["params"] == {"expires_in": 120, "disposition": "inline"}
 
 
-async def test_delete_blob_sends_hard_flag_and_no_body(monkeypatch, emitted):
+async def test_delete_blob_sends_hard_flag_and_no_body(monkeypatch):
     no_content = httpx.Response(204, request=httpx.Request("DELETE", "http://x"))
     client, recorder = _client_with(monkeypatch, [no_content])
 
@@ -113,7 +96,7 @@ async def test_delete_blob_sends_hard_flag_and_no_body(monkeypatch, emitted):
     assert recorder.calls[0]["params"] == {"hard": True}
 
 
-async def test_missing_service_api_key_raises_before_any_http(monkeypatch, emitted):
+async def test_missing_service_api_key_raises_before_any_http(monkeypatch):
     monkeypatch.setattr(settings, "butter_blob_service_api_key", "")
     client, recorder = _client_with(monkeypatch, [_response(201, {})])
 
@@ -121,7 +104,6 @@ async def test_missing_service_api_key_raises_before_any_http(monkeypatch, emitt
         await client.presign_upload("a.png", "image/png")
 
     assert recorder.calls == []
-    assert emitted == []
 
 
 def test_public_url_is_a_pure_string_build():
