@@ -358,3 +358,37 @@ async def test_admin_fills_document_then_approves(client: AsyncClient, db_sessio
     assert bad.status_code == 422
     assert ok.status_code == 200 and ok.json()["cpf"] == "12345678900"
     assert approved.status_code == 201, approved.text
+
+async def test_admin_quote_detail_keeps_price_range_that_client_route_redacts(
+    client: AsyncClient, db_session: AsyncSession
+):
+    client_tokens = await signup(client, email="redact@example.com")
+    admin_tokens = await signup(client, email="admin4@example.com")
+    await _make_admin(db_session, "admin4@example.com")
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
+        created = await client.post(
+            "/quotes/manual",
+            json={
+                "account_id": me.json()["id"],
+                "scope_summary": "Site institucional",
+                "price_range": "R$5.000",
+                "timeline": "4 semanas",
+            },
+            headers=auth_headers(admin_tokens),
+        )
+        quote_id = created.json()["id"]
+        as_admin = await client.get(
+            f"/admin/quotes/{quote_id}", headers=auth_headers(admin_tokens)
+        )
+        as_client = await client.get(f"/quotes/{quote_id}", headers=auth_headers(client_tokens))
+        non_admin = await client.get(
+            f"/admin/quotes/{quote_id}", headers=auth_headers(client_tokens)
+        )
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert as_admin.status_code == 200 and as_admin.json()["price_range"] == "R$5.000"
+    assert as_client.json()["price_range"] is None
+    assert non_admin.status_code == 403
