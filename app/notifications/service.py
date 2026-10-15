@@ -54,6 +54,7 @@ class NotificationService:
             user.email,
             {
                 "name": user.name,
+                "quote_reference": quote.reference,
                 "scope_summary": quote.scope_summary,
                 "amount": str(invoice.amount),
                 "due_date": invoice.due_date.isoformat(),
@@ -74,6 +75,7 @@ class NotificationService:
             {
                 "name": user.name,
                 "scope_summary": extraction.get("problem_summary"),
+                "portal_url": f"{settings.frontend_base_url}/portal",
             },
         )
 
