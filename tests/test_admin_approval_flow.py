@@ -325,3 +325,36 @@ async def test_asaas_failure_reverts_quote_and_allows_retry(
     assert failed.status_code == 502
     assert after_failure.json()["status"] == "draft"
     assert retry.status_code == 201, retry.text
+
+
+async def test_admin_fills_document_then_approves(client: AsyncClient, db_session: AsyncSession):
+    client_tokens = await signup(client, email="fill@example.com")  # no cpf
+    admin_tokens = await signup(client, email="admin3@example.com")
+    await _make_admin(db_session, "admin3@example.com")
+    app.dependency_overrides[get_asaas_client] = lambda: FakeAsaasClient()
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        quote_id = await _quote_for(client, admin_tokens, client_tokens)
+        account_id = (await client.get("/accounts/me", headers=auth_headers(client_tokens))).json()[
+            "id"
+        ]
+        bad = await client.patch(
+            f"/admin/clients/{account_id}/document",
+            json={"cpf": "123"},
+            headers=auth_headers(admin_tokens),
+        )
+        ok = await client.patch(
+            f"/admin/clients/{account_id}/document",
+            json={"cpf": "123.456.789-00"},
+            headers=auth_headers(admin_tokens),
+        )
+        approved = await client.post(
+            f"/admin/quotes/{quote_id}/approve", json=_body(), headers=auth_headers(admin_tokens)
+        )
+    finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert bad.status_code == 422
+    assert ok.status_code == 200 and ok.json()["cpf"] == "12345678900"
+    assert approved.status_code == 201, approved.text

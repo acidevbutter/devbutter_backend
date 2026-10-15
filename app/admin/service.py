@@ -5,6 +5,7 @@ from typing import Any
 
 from app.admin.repository import AdminRepository
 from app.core.decorators import log_errors
+from app.core.exceptions import NotFoundError
 from app.orders.models import Order
 from app.orders.service import OrderService
 from app.quotes.models import Quote
@@ -44,6 +45,16 @@ class AdminService:
 
     async def get_client(self, account_id: uuid.UUID) -> dict[str, Any] | None:
         return await self.repository.get_client(account_id)
+
+    async def update_client_document(
+        self, account_id: uuid.UUID, *, cpf: str | None, cnpj: str | None
+    ) -> dict[str, Any]:
+        if not await self.repository.update_client_document(account_id, cpf=cpf, cnpj=cnpj):
+            raise NotFoundError("Account not found")
+        row = await self.repository.get_client(account_id)
+        if row is None:  # pragma: no cover - just updated
+            raise NotFoundError("Account not found")
+        return row
 
     async def list_orders(
         self,

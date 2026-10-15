@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from typing import Any
 
 from fastapi import APIRouter, status
 
@@ -14,6 +15,7 @@ from app.admin.schemas import (
     AdminCatalogListRead,
     AdminClientCounts,
     AdminClientDetailRead,
+    AdminClientDocumentUpdate,
     AdminClientListItem,
     AdminClientListRead,
     AdminConversationDetailRead,
@@ -174,17 +176,7 @@ async def list_clients(
     )
 
 
-@router.get("/clients/{account_id}", response_model=AdminClientDetailRead)
-async def get_client(
-    account_id: uuid.UUID,
-    _admin: CurrentAdminAccount,
-    service: AdminReadServiceDep,
-) -> AdminClientDetailRead:
-    from app.core.exceptions import NotFoundError
-
-    row = await service.get_client(account_id)
-    if row is None:
-        raise NotFoundError("Account not found")
+def _client_detail(row: dict[str, Any]) -> AdminClientDetailRead:
     account = row["account"]
     company = row["company"]
     user = row["user"]
@@ -203,6 +195,35 @@ async def get_client(
         subaccount_approval=row.get("subaccount_approval"),
         counts=AdminClientCounts(**row["counts"]),
     )
+
+
+@router.get("/clients/{account_id}", response_model=AdminClientDetailRead)
+async def get_client(
+    account_id: uuid.UUID,
+    _admin: CurrentAdminAccount,
+    service: AdminReadServiceDep,
+) -> AdminClientDetailRead:
+    from app.core.exceptions import NotFoundError
+
+    row = await service.get_client(account_id)
+    if row is None:
+        raise NotFoundError("Account not found")
+    return _client_detail(row)
+
+
+@router.patch(
+    "/clients/{account_id}/document",
+    response_model=AdminClientDetailRead,
+    summary="Fill the client's CPF/CNPJ (required by Asaas before approving a quote)",
+)
+async def update_client_document(
+    account_id: uuid.UUID,
+    payload: AdminClientDocumentUpdate,
+    _admin: CurrentAdminAccount,
+    service: AdminServiceDep,
+) -> AdminClientDetailRead:
+    row = await service.update_client_document(account_id, cpf=payload.cpf, cnpj=payload.cnpj)
+    return _client_detail(row)
 
 
 @router.get("/orders", response_model=AdminOrderListRead)
