@@ -37,7 +37,7 @@ class FakeRelayClient:
     def __init__(self):
         self.sent = []
 
-    def send(self, template_key, to, payload):
+    def send(self, template_key, to, payload, project_id=None, queue=None):
         self.sent.append((template_key, to, payload))
 
 

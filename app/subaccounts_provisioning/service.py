@@ -128,7 +128,9 @@ class SubaccountProvisioningService:
 
         if owner is not None:
             try:
-                self._notification_service.notify_subaccount_onboarding(owner, company.name)
+                self._notification_service.notify_subaccount_onboarding(
+                    owner, company.name, company
+                )
             except Exception:  # pragma: no cover - delivery is best effort
                 logger.exception("subaccount onboarding notification could not be queued")
         return SubaccountProvisioningResult(link, created=True, detail="provisioned")
