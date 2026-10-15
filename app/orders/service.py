@@ -2,10 +2,11 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+from app.accounts.models import Company, User
 from app.accounts.repository import AccountRepository
 from app.core.clients.asaas_client import AsaasClient
 from app.core.decorators import log_errors
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.invoices.repository import InvoiceRepository
 from app.notifications.service import NotificationService
 from app.orders.models import Order
@@ -29,6 +30,27 @@ class OrderService:
         self.asaas_client = asaas_client
         self.notification_service = notification_service
 
+    async def ensure_billable(self, quote: Quote) -> None:
+        """Fails with an actionable 422 *before* anything is written when Asaas
+        would reject the charge for lack of a CPF/CNPJ (the AI chat never
+        collects one). A company that already has an Asaas customer is fine."""
+        account = await self.account_repository.get(quote.account_id)
+        if account is None:
+            raise NotFoundError(f"Account {quote.account_id} not found")
+        company = await self.account_repository.get_company(account.company_id)
+        if company is None:
+            raise NotFoundError(f"Company {account.company_id} not found")
+        if await self.account_repository.get_asaas_customer_link(company.id) is not None:
+            return
+        user = await self.account_repository.get_user(company.user_id)
+        if user is None:
+            raise NotFoundError(f"User {company.user_id} not found")
+        if not (company.cnpj or user.cpf):
+            raise ValidationFailedError(
+                "O cliente não tem CPF/CNPJ cadastrado. Preencha o documento do cliente "
+                "antes de aprovar o orçamento (o Asaas exige para criar a cobrança)."
+            )
+
     async def create_from_approved_quote(
         self, quote: Quote, *, amount: Decimal, due_date: date, billing_type: str
     ) -> Order:
@@ -37,8 +59,6 @@ class OrderService:
         (admin) approval -- see quotes/service.py._require_pending and
         admin/router.py.
         """
-        order = await self.repository.create(quote_id=quote.id, account_id=quote.account_id)
-
         account = await self.account_repository.get(quote.account_id)
         if account is None:
             raise NotFoundError(f"Account {quote.account_id} not found")
@@ -49,6 +69,25 @@ class OrderService:
         if user is None:
             raise NotFoundError(f"User {company.user_id} not found")
 
+        order = await self.repository.create(quote_id=quote.id, account_id=quote.account_id)
+        try:
+            return await self._bill(order, quote, company, user, amount, due_date, billing_type)
+        except Exception:
+            # Order.quote_id is unique: a half-built order would make every
+            # retry fail with 409, so drop it and let the caller revert the quote.
+            await self.repository.delete(order)
+            raise
+
+    async def _bill(
+        self,
+        order: Order,
+        quote: Quote,
+        company: Company,
+        user: User,
+        amount: Decimal,
+        due_date: date,
+        billing_type: str,
+    ) -> Order:
         link = await self.account_repository.get_asaas_customer_link(company.id)
         if link is None:
             customer = await self.asaas_client.create_customer(

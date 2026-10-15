@@ -100,12 +100,20 @@ class AdminService:
         due_date: date,
         billing_type: str,
     ) -> tuple[Quote, Order]:
-        quote = await self.quote_service.approve(quote_id, reviewer_id)
         if self.order_service is None:
             raise RuntimeError("Order service is required for quote approval")
-        order = await self.order_service.create_from_approved_quote(
-            quote, amount=amount, due_date=due_date, billing_type=billing_type
-        )
+        pending = await self.quote_service.get(quote_id)
+        previous_status = pending.status
+        if previous_status in ("draft", "edited"):
+            await self.order_service.ensure_billable(pending)
+        quote = await self.quote_service.approve(quote_id, reviewer_id)
+        try:
+            order = await self.order_service.create_from_approved_quote(
+                quote, amount=amount, due_date=due_date, billing_type=billing_type
+            )
+        except Exception:
+            await self.quote_service.revert_approval(quote, previous_status)
+            raise
         return quote, order
 
 
