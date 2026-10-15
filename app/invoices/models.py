@@ -32,6 +32,9 @@ class Invoice(Base):
     requires_nfse: Mapped[bool] = mapped_column(Boolean, default=False)
     due_date: Mapped[date] = mapped_column(Date)
     payment_link: Mapped[str | None] = mapped_column(String(500), default=None)
+    # PIX / BOLETO / CREDIT_CARD / UNDEFINED as Asaas reports it -- lets the portal
+    # label the charge correctly instead of guessing from the payment link.
+    billing_type: Mapped[str | None] = mapped_column(String(20), default=None)
     # Only a digest of the provider event is retained here. Raw provider
     # payloads (which can contain customer data) become asaas_payment's
     # encrypted canonical mirror after the migration.

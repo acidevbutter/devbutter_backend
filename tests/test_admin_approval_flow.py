@@ -247,6 +247,41 @@ async def test_asaas_webhook_rejects_wrong_token(client: AsyncClient, monkeypatc
     assert response.status_code == 401
 
 
+
+async def test_admin_quote_detail_keeps_price_range_that_client_route_redacts(
+    client: AsyncClient, db_session: AsyncSession
+):
+    client_tokens = await signup(client, email="redact@example.com")
+    admin_tokens = await signup(client, email="admin4@example.com")
+    await _make_admin(db_session, "admin4@example.com")
+    app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
+    try:
+        me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
+        created = await client.post(
+            "/quotes/manual",
+            json={
+                "account_id": me.json()["id"],
+                "scope_summary": "Site institucional",
+                "price_range": "R$5.000",
+                "timeline": "4 semanas",
+            },
+            headers=auth_headers(admin_tokens),
+        )
+        quote_id = created.json()["id"]
+        as_admin = await client.get(
+            f"/admin/quotes/{quote_id}", headers=auth_headers(admin_tokens)
+        )
+        as_client = await client.get(f"/quotes/{quote_id}", headers=auth_headers(client_tokens))
+        non_admin = await client.get(
+            f"/admin/quotes/{quote_id}", headers=auth_headers(client_tokens)
+        )
+    finally:
+        app.dependency_overrides.pop(get_relay_client, None)
+
+    assert as_admin.status_code == 200 and as_admin.json()["price_range"] == "R$5.000"
+    assert as_client.json()["price_range"] is None
+    assert non_admin.status_code == 403
+
 class _FailingPaymentAsaasClient(FakeAsaasClient):
     async def create_payment(self, payload):
         from app.core.exceptions import UpstreamServiceError
@@ -360,11 +395,15 @@ async def test_admin_fills_document_then_approves(client: AsyncClient, db_sessio
     assert approved.status_code == 201, approved.text
 
 async def test_admin_quote_detail_keeps_price_range_that_client_route_redacts(
+
+
+async def test_invoice_persists_and_exposes_billing_type(
     client: AsyncClient, db_session: AsyncSession
 ):
-    client_tokens = await signup(client, email="redact@example.com")
-    admin_tokens = await signup(client, email="admin4@example.com")
-    await _make_admin(db_session, "admin4@example.com")
+    client_tokens = await signup(client, email="pix@example.com", cpf="12345678900")
+    admin_tokens = await signup(client, email="admin5@example.com")
+    await _make_admin(db_session, "admin5@example.com")
+    app.dependency_overrides[get_asaas_client] = lambda: FakeAsaasClient()
     app.dependency_overrides[get_relay_client] = lambda: FakeRelayClient()
     try:
         me = await client.get("/accounts/me", headers=auth_headers(client_tokens))
@@ -372,23 +411,32 @@ async def test_admin_quote_detail_keeps_price_range_that_client_route_redacts(
             "/quotes/manual",
             json={
                 "account_id": me.json()["id"],
-                "scope_summary": "Site institucional",
-                "price_range": "R$5.000",
-                "timeline": "4 semanas",
+                "scope_summary": "Site",
+                "price_range": "R$1.000",
+                "timeline": "2 semanas",
             },
             headers=auth_headers(admin_tokens),
         )
-        quote_id = created.json()["id"]
-        as_admin = await client.get(
-            f"/admin/quotes/{quote_id}", headers=auth_headers(admin_tokens)
+        approved = await client.post(
+            f"/admin/quotes/{created.json()['id']}/approve",
+            json={
+                "amount": "2000.00",
+                "due_date": (date.today() + timedelta(days=7)).isoformat(),
+                "billing_type": "PIX",
+            },
+            headers=auth_headers(admin_tokens),
         )
-        as_client = await client.get(f"/quotes/{quote_id}", headers=auth_headers(client_tokens))
-        non_admin = await client.get(
-            f"/admin/quotes/{quote_id}", headers=auth_headers(client_tokens)
+        invoices = await client.get(
+            f"/invoices?order_id={approved.json()['id']}", headers=auth_headers(client_tokens)
         )
     finally:
+        app.dependency_overrides.pop(get_asaas_client, None)
         app.dependency_overrides.pop(get_relay_client, None)
 
     assert as_admin.status_code == 200 and as_admin.json()["price_range"] == "R$5.000"
     assert as_client.json()["price_range"] is None
     assert non_admin.status_code == 403
+
+    assert approved.status_code == 201, approved.text
+    assert invoices.status_code == 200, invoices.text
+    assert invoices.json()[0]["billing_type"] == "PIX"
