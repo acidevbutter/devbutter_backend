@@ -247,7 +247,6 @@ async def test_asaas_webhook_rejects_wrong_token(client: AsyncClient, monkeypatc
     assert response.status_code == 401
 
 
-
 async def test_admin_quote_detail_keeps_price_range_that_client_route_redacts(
     client: AsyncClient, db_session: AsyncSession
 ):
@@ -394,8 +393,6 @@ async def test_admin_fills_document_then_approves(client: AsyncClient, db_sessio
     assert ok.status_code == 200 and ok.json()["cpf"] == "12345678900"
     assert approved.status_code == 201, approved.text
 
-async def test_admin_quote_detail_keeps_price_range_that_client_route_redacts(
-
 
 async def test_invoice_persists_and_exposes_billing_type(
     client: AsyncClient, db_session: AsyncSession
@@ -432,10 +429,6 @@ async def test_invoice_persists_and_exposes_billing_type(
     finally:
         app.dependency_overrides.pop(get_asaas_client, None)
         app.dependency_overrides.pop(get_relay_client, None)
-
-    assert as_admin.status_code == 200 and as_admin.json()["price_range"] == "R$5.000"
-    assert as_client.json()["price_range"] is None
-    assert non_admin.status_code == 403
 
     assert approved.status_code == 201, approved.text
     assert invoices.status_code == 200, invoices.text
