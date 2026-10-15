@@ -103,14 +103,11 @@ class DraftQuoteRequest(BaseModel):
 
 
 class DraftQuoteFromConversation(BaseModel):
-    """Returned after `POST /conversations/{id}/draft-quote`. Shows the AI's
-    price_range/timeline/reference once, right here -- the Fluxo Cotação IA
-    canvas (screens 1d-1g) displays the estimate immediately, clearly
-    labeled as unreviewed. This does NOT reopen the general redaction in
-    quotes/router.py::_client_facing_quote_read: a quote fetched later via
-    GET /quotes/{id} while still `draft` still comes back with price_range
-    stripped, per docs/plano-preco-so-apos-aprovacao.md -- only this
-    just-submitted response is an intentional, narrow exception.
+    """Returned after `POST /conversations/{id}/draft-quote`. Carries the
+    reference/timeline but **never a price**: `price_range` is kept in the
+    schema for compatibility and is always null here, per
+    docs/plano-preco-so-apos-aprovacao.md (the price only reaches the client
+    after an admin approves the quote -- DVB-454).
 
     `tokens`/`pending_account_link` only matter for a visitor conversation
     (account_id was None going in -- see
