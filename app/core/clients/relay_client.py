@@ -29,18 +29,28 @@ class RelayClient:
         self._celery = Celery("devbutter_backend_relay_client", broker=settings.redis_url)
 
     @log_call
-    def send(self, template_key: str, to: str, payload: dict[str, Any]) -> None:
+    def send(
+        self,
+        template_key: str,
+        to: str,
+        payload: dict[str, Any],
+        *,
+        project_id: str | None = None,
+        queue: str | None = None,
+    ) -> None:
+        """`project_id`/`queue` override the platform defaults per call, so
+        each Company's mail leaves through its own Relay project."""
         if not settings.redis_url:
             raise UpstreamServiceError("REDIS_URL is not configured")
         self._celery.send_task(
             TASK_NAME,
             kwargs={
-                "project_id": settings.relay_project_id,
+                "project_id": project_id or settings.relay_project_id,
                 "template_key": template_key,
                 "to": to,
                 "payload": payload,
             },
-            queue=settings.relay_queue_name,
+            queue=queue or settings.relay_queue_name,
         )
 
 

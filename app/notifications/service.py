@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from app.accounts.models import User
+from app.accounts.models import Company, User
 from app.core.clients.relay_client import RelayClient
 from app.core.decorators import log_errors
 from app.invoices.models import Invoice
@@ -29,8 +29,27 @@ class NotificationService:
     def __init__(self, relay_client: RelayClient):
         self.relay_client = relay_client
 
-    def notify_quote_approved(self, user: User, quote: Quote, invoice: Invoice) -> None:
+    def _send(
+        self,
+        template_key: str,
+        to: str,
+        payload: dict[str, Any],
+        company: Company | None = None,
+    ) -> None:
+        """Routes through the company's own Relay project/queue when it has
+        one; otherwise falls back to the platform project."""
         self.relay_client.send(
+            template_key,
+            to,
+            payload,
+            project_id=company.relay_project_id if company else None,
+            queue=company.relay_queue if company else None,
+        )
+
+    def notify_quote_approved(
+        self, user: User, quote: Quote, invoice: Invoice, company: Company | None = None
+    ) -> None:
+        self._send(
             _TEMPLATE_QUOTE_APPROVED,
             user.email,
             {
@@ -40,6 +59,7 @@ class NotificationService:
                 "due_date": invoice.due_date.isoformat(),
                 "payment_link": invoice.payment_link,
             },
+            company,
         )
 
     def notify_pending_account_link(self, user: User, extraction: dict[str, Any]) -> None:
@@ -100,11 +120,13 @@ class NotificationService:
             },
         )
 
-    def notify_subaccount_onboarding(self, user: User, company_name: str) -> None:
+    def notify_subaccount_onboarding(
+        self, user: User, company_name: str, company: Company | None = None
+    ) -> None:
         """The company's Asaas subaccount was just provisioned -- point the
         owner at the portal onboarding screen (login-gated) rather than a raw
         Asaas onboardingUrl, which isn't available yet at this moment."""
-        self.relay_client.send(
+        self._send(
             _TEMPLATE_SUBACCOUNT_ONBOARDING,
             user.email,
             {
@@ -112,12 +134,17 @@ class NotificationService:
                 "company": company_name,
                 "onboarding_url": f"{settings.frontend_base_url}/portal/recebimentos",
             },
+            company,
         )
 
     def notify_commercial_info_expiring(
-        self, user: User, company_name: str, scheduled_date: str | None
+        self,
+        user: User,
+        company_name: str,
+        scheduled_date: str | None,
+        company: Company | None = None,
     ) -> None:
-        self.relay_client.send(
+        self._send(
             _TEMPLATE_COMMERCIAL_INFO_EXPIRING,
             user.email,
             {
@@ -126,10 +153,13 @@ class NotificationService:
                 "scheduled_date": scheduled_date,
                 "onboarding_url": f"{settings.frontend_base_url}/portal/recebimentos",
             },
+            company,
         )
 
-    def notify_payment_status_changed(self, user: User, invoice: Invoice) -> None:
-        self.relay_client.send(
+    def notify_payment_status_changed(
+        self, user: User, invoice: Invoice, company: Company | None = None
+    ) -> None:
+        self._send(
             _TEMPLATE_PAYMENT_STATUS_CHANGED,
             user.email,
             {
@@ -138,4 +168,5 @@ class NotificationService:
                 "amount": str(invoice.amount),
                 "payment_link": invoice.payment_link,
             },
+            company,
         )

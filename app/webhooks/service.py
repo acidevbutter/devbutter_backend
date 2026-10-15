@@ -241,7 +241,7 @@ class WebhookService:
                 else None
             )
             self.notification_service.notify_commercial_info_expiring(
-                user, company.name, scheduled
+                user, company.name, scheduled, company
             )
         except Exception:  # pragma: no cover - best effort
             logger.exception("commercial-info-expiring notification could not be queued")
@@ -282,7 +282,7 @@ class WebhookService:
         user = await self.account_repository.get_user(company.user_id)
         if user is None:
             return
-        self.notification_service.notify_payment_status_changed(user, invoice)
+        self.notification_service.notify_payment_status_changed(user, invoice, company)
         nfse = self._nfse()
         if nfse is not None:
             await nfse.enqueue_from_paid_invoice(invoice)

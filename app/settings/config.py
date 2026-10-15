@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     redis_url: str = ""
     relay_queue_name: str = "relay-shared"
     relay_project_id: str = ""
+    relay_base_url: str = ""
 
     # NFS-e (Layer A originator). Empty subaccount id means "do not emit".
     asaas_nfse_subaccount_id: str = ""

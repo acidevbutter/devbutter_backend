@@ -37,7 +37,9 @@ class _FakeNotifications:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
-    def notify_subaccount_onboarding(self, user: User, company_name: str) -> None:
+    def notify_subaccount_onboarding(
+        self, user: User, company_name: str, company: Company | None = None
+    ) -> None:
         self.calls.append((user.email, company_name))
 
 
