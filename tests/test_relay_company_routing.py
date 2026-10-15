@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,6 +24,10 @@ class _SpyRelay:
         self.payloads.append((template_key, payload))
 
 
+def _service(relay: _SpyRelay) -> NotificationService:
+    return NotificationService(cast(RelayClient, relay))
+
+
 def _invoice() -> Any:
     return SimpleNamespace(
         status="PAID", amount=Decimal("10.00"), payment_link="https://pay", due_date=date.today()
@@ -40,26 +44,26 @@ def test_company_with_own_project_routes_through_its_queue():
         id=uuid.uuid4(), user_id=uuid.uuid4(), name="Acme",
         relay_project_id="proj-acme", relay_queue="relay-acme",
     )
-    NotificationService(relay).notify_payment_status_changed(_user(), _invoice(), company)
+    _service(relay).notify_payment_status_changed(_user(), _invoice(), company)
     assert relay.calls == [{"project_id": "proj-acme", "queue": "relay-acme", "to": "dona@ex.com"}]
 
 
 def test_company_without_project_falls_back_to_platform():
     relay = _SpyRelay()
     company = Company(id=uuid.uuid4(), user_id=uuid.uuid4(), name="Acme")
-    NotificationService(relay).notify_payment_status_changed(_user(), _invoice(), company)
-    NotificationService(relay).notify_payment_status_changed(_user(), _invoice())
+    _service(relay).notify_payment_status_changed(_user(), _invoice(), company)
+    _service(relay).notify_payment_status_changed(_user(), _invoice())
     assert all(c["project_id"] is None and c["queue"] is None for c in relay.calls)
 
 
 def test_notification_payloads_include_template_reference_and_portal_link(monkeypatch):
     relay = _SpyRelay()
-    service = NotificationService(relay)
+    service = _service(relay)
     monkeypatch.setattr(settings, "frontend_base_url", "https://app.devbutter.com")
 
     service.notify_quote_approved(
         _user(),
-        SimpleNamespace(reference="Q-123", scope_summary="Site institucional"),
+        cast(Any, SimpleNamespace(reference="Q-123", scope_summary="Site institucional")),
         _invoice(),
     )
     service.notify_pending_account_link(_user(), {"problem_summary": "Site institucional"})
