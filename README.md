@@ -65,9 +65,9 @@ they are an aggregate view and an integration adapter (see
   Quote/Order/Invoice. Admin-only `/admin/mind/*` routes proxy metrics, governance and budgets
   mensais por fluxo com `BUTTER_MIND_INTERNAL_API_KEY`; esta chave nunca chega ao frontend.
 - **→ `butter_relay`** (`core/clients/relay_client.py`): Celery `send_task` onto the shared Redis
-  queue, tagged with this service's `project_id`. Only builds `{template_key, to, payload}` —
-  templates (`devbutter_quote_approved`, `devbutter_payment_status_changed`) must be registered in
-  the `butter_relay` admin, not hardcoded here.
+  queue, tagged with this service's `project_id` (a UUID from `RELAY_PROJECT_ID`). It builds
+  `{template_key, to, payload}`; the seven `devbutter_*` templates are published per Relay Project
+  by `butter_relay/scripts/seed_devbutter_templates.py`.
 - **← Asaas webhook** (`webhooks/router.py`): `POST /webhooks/asaas`, validates the
   `asaas-access-token` header. Idempotent by construction — `InvoiceRepository.update_status()` is a
   no-op if the mapped status is already applied.

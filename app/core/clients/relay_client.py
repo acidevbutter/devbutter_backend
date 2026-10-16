@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from celery import Celery
@@ -11,6 +12,15 @@ from app.settings.config import settings
 TASK_NAME = "butter_relay.process_message"
 
 
+def is_valid_project_id(value: str | None) -> bool:
+    """butter_relay only accepts a Project UUID; anything else is dropped by its worker."""
+    try:
+        uuid.UUID(value or "")
+    except ValueError:
+        return False
+    return True
+
+
 class RelayClient:
     """Publishes "send this email" jobs onto butter_relay's shared Celery
     queue (same Redis broker butter_relay's own worker consumes from).
@@ -18,8 +28,8 @@ class RelayClient:
     renders templates itself -- it only builds {template_key, to, payload}
     and tags the message with its own `project_id`, exactly like every other
     app.SendMessage caller of butter_relay (see butter_relay/README.md).
-    Templates (quote-approved, invoice-created, payment-confirmed) are
-    registered in the relay admin, not hardcoded here.
+    The `devbutter_*` templates are published per Project with
+    `butter_relay/scripts/seed_devbutter_templates.py`.
     """
 
     def __init__(self) -> None:
@@ -42,10 +52,18 @@ class RelayClient:
         each Company's mail leaves through its own Relay project."""
         if not settings.redis_url:
             raise UpstreamServiceError("REDIS_URL is not configured")
+        effective_project_id = project_id or settings.relay_project_id
+        if not is_valid_project_id(effective_project_id):
+            # Fail loudly: queuing it "succeeds" and the relay worker then drops the
+            # message as malformed, so the e-mail is lost without a trace (DVB-332).
+            raise UpstreamServiceError(
+                "RELAY_PROJECT_ID is empty or not a UUID; set it to the Project id "
+                "registered in the butter_relay admin"
+            )
         self._celery.send_task(
             TASK_NAME,
             kwargs={
-                "project_id": project_id or settings.relay_project_id,
+                "project_id": effective_project_id,
                 "template_key": template_key,
                 "to": to,
                 "payload": payload,
