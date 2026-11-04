@@ -6,7 +6,7 @@
   `Dockerfile.dokploy` (multi-stage, venv em `/opt/venv`, `tini` como PID 1,
   `HEALTHCHECK` em `/health`, uvicorn via `UVICORN_HOST`/`UVICORN_PORT`,
   `FORWARDED_ALLOW_IPS=*` atrás do Traefik) e novo `docker-compose.dokploy.yml`
-  (`backend-api`, alias `platform-api` na `dokploy-network`, cert mTLS do
+  (`backend-api`, alias `<DEPLOY_ENV>-platform-api` na `dokploy-network`, cert mTLS do
   asaas montado de `../files/mtls/platform`). `docker-entrypoint.sh` aceita
   `RUN_MIGRATIONS=false`.
 
