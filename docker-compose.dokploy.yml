@@ -1,0 +1,46 @@
+# Dokploy "Compose" service -- Compose Path: ./docker-compose.dokploy.yml.
+#
+#   Environment: Dokploy "Environment" tab. Dokploy writes it to .env next to
+#                this file; every service loads it via env_file and compose
+#                interpolates ${VAR} from it. Nothing secret lives in git.
+#   Domains:     Dokploy "Domains" tab -> pick the service + container port;
+#                Dokploy injects the Traefik labels (HTTPS via Let's Encrypt).
+#                No `ports:` here on purpose: Traefik is the only way in.
+#   Network:     dokploy-network (external, created by Dokploy) is shared with
+#                Traefik and the Dokploy-managed Postgres/Redis. The aliases are
+#                the stable inter-service DNS names the other services use in
+#                their *_BASE_URL vars -- one Dokploy server = one environment,
+#                or these aliases collide across staging/production.
+#   Health:      each image ships its own HEALTHCHECK (GET /health).
+#   Files:       Dokploy "Advanced > Mounts" (or the server path ../files/)
+#                must hold mtls/platform/{devbutter-platform.crt,.key,ca.crt}:
+#                the client cert this API presents to asaas_payment's nginx.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  backend-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dokploy
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ../files/mtls/platform:/app/certs:ro
+    expose:
+      - "8000"
+    networks:
+      dokploy-network:
+        aliases:
+          - platform-api
+    restart: unless-stopped
+    logging: *default-logging
+
+networks:
+  dokploy-network:
+    external: true

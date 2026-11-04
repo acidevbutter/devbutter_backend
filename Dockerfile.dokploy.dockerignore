@@ -1,0 +1,29 @@
+# Only for `docker build -f Dockerfile.dokploy .` (BuildKit reads <Dockerfile>.dockerignore
+# from the Dockerfile's own directory). Keeps secrets, tests and docs out of the
+# Dokploy build context; config is injected as env vars at deploy time.
+.git
+.github
+.env
+.env.*
+!.env.example
+certs/
+*.key
+*.pem
+*.crt
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+docs/
+scripts/
+README.md
+CHANGELOG.md
+RELEASE_NOTES.md
+CLAUDE.md
+AGENTS.md
+docker-compose*.yml
