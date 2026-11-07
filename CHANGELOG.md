@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Deploy migrado da Coolify para o Dokploy: `Dockerfile.hostinger` virou
+  `Dockerfile.dokploy` (multi-stage, venv em `/opt/venv`, `tini` como PID 1,
+  `HEALTHCHECK` em `/health`, uvicorn via `UVICORN_HOST`/`UVICORN_PORT`,
+  `FORWARDED_ALLOW_IPS=*` atrás do Traefik) e novo `docker-compose.dokploy.yml`
+  (`backend-api`, alias `<DEPLOY_ENV>-platform-api` na `dokploy-network`, cert mTLS do
+  asaas montado de `../files/mtls/platform`). `docker-entrypoint.sh` aceita
+  `RUN_MIGRATIONS=false`.
+
 - Removida toda a telemetria OpenTelemetry/métricas (`app/core/metrics.py`,
   `app/core/telemetry.py`, instrumentors de FastAPI/HTTPX/SQLAlchemy, dependências
   `opentelemetry-*`, settings e variáveis `OTEL_*`) e as linhas JSON
