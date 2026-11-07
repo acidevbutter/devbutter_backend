@@ -5,6 +5,7 @@ from app.core.validators.documents import (
     is_valid_document,
     normalize_document,
 )
+from app.core.validators.texts import to_snake
 
 __all__ = [
     "classify_document",
@@ -12,4 +13,5 @@ __all__ = [
     "is_valid_cpf",
     "is_valid_document",
     "normalize_document",
+    "to_snake",
 ]

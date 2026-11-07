@@ -44,6 +44,16 @@ extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+# Black style wins over PEP 8: the formatter owns line wrapping, and E501
+# would flag long strings/comments black deliberately leaves alone.
+ignore = ["E501"]
+
+[tool.ruff.format]
+# Black-compatible defaults, stated explicitly.
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [tool.ruff.lint.isort]
 # The project has a top-level `alembic/` dir, which makes isort mistake the
