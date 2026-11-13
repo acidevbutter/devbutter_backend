@@ -73,11 +73,11 @@ def _service(
     db: AsyncSession, fake: _FakeAsaas, notes: _FakeNotifications
 ) -> SubaccountProvisioningService:
     return SubaccountProvisioningService(
-        fake,  # type: ignore[arg-type]
+        fake,
         AsaasSubaccountLinkRepository(db),
         CompanyBillingProfileRepository(db),
         AccountRepository(db),
-        notes,  # type: ignore[arg-type]
+        notes,
     )
 
 

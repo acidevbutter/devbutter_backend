@@ -98,18 +98,18 @@ def _is_authorized(conversation: Conversation, account_id: uuid.UUID | None) -> 
     return account_id == conversation.account_id
 
 
-@sio.event  # type: ignore[untyped-decorator]
+@sio.event
 async def connect(sid: str, environ: dict[str, Any], auth: Any = None) -> None:
     _socket_accounts[sid] = await _socket_auth_from_cookie(environ)
 
 
-@sio.event  # type: ignore[untyped-decorator]
+@sio.event
 async def disconnect(sid: str) -> None:
     _socket_accounts.pop(sid, None)
     _socket_conversations.pop(sid, None)
 
 
-@sio.event  # type: ignore[untyped-decorator]
+@sio.event
 async def join_conversation(sid: str, data: dict[str, Any]) -> dict[str, Any]:
     """Returns an ack dict ({"ok": bool, "detail": ...}) rather than emitting a
     separate event -- the client awaits this ack before calling send_message,
@@ -156,7 +156,7 @@ def _clean_selection(raw: object) -> dict[str, Any] | None:
     return {"field": field, "option_ids": ids}
 
 
-@sio.event  # type: ignore[untyped-decorator]
+@sio.event
 async def send_message(sid: str, data: dict[str, Any]) -> None:
     raw_conversation_id = data.get("conversation_id")
     content = data.get("content", "")
