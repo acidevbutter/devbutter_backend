@@ -116,10 +116,10 @@ def _service(
         InvoiceRepository(db_session),
         OrderRepository(db_session),
         AccountRepository(db_session),
-        asaas,  # type: ignore[arg-type]
-        blob,  # type: ignore[arg-type]
-        relay,  # type: ignore[arg-type]
-        http_client=_FakeHttp(),  # type: ignore[arg-type]
+        asaas,
+        blob,
+        relay,
+        http_client=_FakeHttp(),
     )
 
 
