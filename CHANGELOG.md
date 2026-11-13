@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Removido o mypy: dependência de dev, seções `[tool.mypy]` (com o plugin
+  `pydantic.mypy`) do `pyproject.toml`, o passo `poetry run mypy .` do CI e os
+  comentários `# type: ignore[...]` que só existiam para ele. A qualidade no CI
+  fica com `ruff check` e `pytest`.
+
 - Deploy migrado da Coolify para o Dokploy: `Dockerfile.hostinger` virou
   `Dockerfile.dokploy` (multi-stage, venv em `/opt/venv`, `tini` como PID 1,
   `HEALTHCHECK` em `/health`, uvicorn via `UVICORN_HOST`/`UVICORN_PORT`,

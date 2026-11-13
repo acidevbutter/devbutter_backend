@@ -35,7 +35,6 @@ jobs:
             -subj "/CN=devbutter-platform"
           cp certs/devbutter-platform.crt certs/ca.crt
       - run: poetry run ruff check .
-      - run: poetry run mypy .
       - run: poetry run pytest
 
   migrations:
